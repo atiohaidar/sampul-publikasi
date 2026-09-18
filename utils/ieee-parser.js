@@ -127,12 +127,12 @@ function parseIeeeProceedingPage(docOrHtml, sourceUrl = '') {
     }
   }
 
-  // Prioritas 2: Jika tidak ada kata "cover", scan dari PALING ATAS untuk kata kunci halaman depan (title page, preliminary, front matter)
+  // Prioritas 2: Jika tidak ada kata "cover", scan untuk kata kunci halaman depan / informasi hak cipta
   if (!coverPdfUrl) {
-    const frontKeywords = ['front matter', 'title page', 'half title', 'preliminar', 'preface'];
+    const frontKeywords = ['copyright page', 'front matter', 'title page', 'table of contents', 'half title', 'preliminar', 'preface'];
     for (let i = 0; i < items.length; i++) {
       const item = items[i];
-      const titleEl = item.querySelector('h2, .result-item-title, .title');
+      const titleEl = item.querySelector('h2, .result-item-title, .title, [xplmathjax]');
       const text = titleEl ? titleEl.textContent.trim().toLowerCase() : '';
       if (frontKeywords.some(kw => text.includes(kw))) {
         const pdfInfo = getPdfInfo(item);
@@ -147,26 +147,24 @@ function parseIeeeProceedingPage(docOrHtml, sourceUrl = '') {
     }
   }
 
-  // Prioritas 3 (Fallback): Ambil item PALING ATAS (index 0) yang memiliki link PDF
-  if (!coverPdfUrl && items.length > 0) {
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      const pdfInfo = getPdfInfo(item);
-      if (pdfInfo) {
-        const titleEl = item.querySelector('h2, .result-item-title, .title');
-        matchedTitle = titleEl ? titleEl.textContent.trim() : 'Cover';
-        coverPdfUrl = pdfInfo.pdfUrl;
-        coverDirectPdfUrl = pdfInfo.directUrl;
-        coverArnumber = pdfInfo.arnumber;
-        break;
-      }
-    }
-  }
+  // Deteksi jumlah halaman paginasi jika ada
+  const pageButtons = Array.from(doc.querySelectorAll(
+    'xpl-paginator button, .pagination-bar button, ul.pagination button, .pagination-bar a'
+  ));
+  const numericPages = pageButtons
+    .map(b => parseInt((b.innerText || b.textContent || '').trim(), 10))
+    .filter(n => !isNaN(n) && n > 0);
+  const maxPage = numericPages.length > 0 ? Math.max(...numericPages) : 1;
+
+  const coverFound = !!coverPdfUrl;
 
   return {
+    success: true,
+    coverFound: coverFound,
+    maxPage: maxPage,
     conferenceName: conferenceName || 'IEEE Conference Proceeding',
     year: year || '',
-    coverTitle: matchedTitle || 'Cover',
+    coverTitle: matchedTitle || (coverFound ? 'Cover' : ''),
     coverPdfUrl: coverPdfUrl || '',
     coverDirectPdfUrl: coverDirectPdfUrl || coverPdfUrl || '',
     coverArnumber: coverArnumber || '',
