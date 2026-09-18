@@ -316,13 +316,13 @@
       <div class="callout-header">Catatan Penting Mengenai Hasil Unduhan & Keterbatasan</div>
       <ul class="note-list">
         <li>
-          <strong>Jika hanya file <code>.pdf</code> yang terunduh:</strong> Ekstensi berhasil mengunduh file dokumen cover asli dari penerbit, namun proses render/konversi menjadi file gambar (<code>.jpg</code>) memerlukan waktu lebih lama atau mengalami timeout di peramban. File PDF tersebut tetap sah, valid, dan dapat Anda gunakan langsung atau dikonversi secara terpisah.
+          <strong>Jika hanya file <code>.pdf</code> yang terunduh:</strong> Ekstensi berhasil mengunduh file dokumen cover asli dari penerbit, namun proses render/konversi menjadi file gambar (<code>.png</code> / <code>.jpg</code>) memerlukan waktu lebih lama atau mengalami timeout di peramban. File PDF tersebut tetap sah, valid, dan dapat Anda konversi seragam menggunakan tab <strong>"Konversi Folder PNG"</strong> di Dashboard.
         </li>
         <li>
           <strong>Jika hanya file <code>.htm</code> / <code>.html</code> yang terunduh:</strong> Berkas dokumen tidak dapat diakses langsung oleh ekstensi. Hal ini biasanya menandakan bahwa artikel memerlukan akses jaringan kampus (seperti VPN, EzProxy, atau login SSO institusi), atau dokumen berada di balik batas akses berbayar (paywall).
         </li>
         <li>
-          <strong>Proses gagal pada publisher tertentu:</strong> Struktur halaman tiap penerbit ilmiah sangat beragam dan dapat berubah sewaktu-waktu. Belum semua penerbit atau jenis dokumen dapat diproses secara otomatis oleh alat ini. Jika suatu tautan gagal, cover dapat diunduh manual dari situs terkait.
+          <strong>Proses gagal atau dokumen bertuliskan "Cover" tidak ada:</strong> Untuk penerbit seperti IEEE Xplore, sistem otomatis menelusuri hingga halaman paling akhir prosiding dan mengambil dokumen prosiding/halaman depan jika kata "Cover" tidak ditemukan. Namun jika suatu tautan tetap gagal, Anda dapat menyalin daftar nomor yang error dengan tombol 1-klik di Dashboard.
         </li>
         <li>
           <strong>Tantangan verifikasi robot (Cloudflare / CAPTCHA):</strong> Jika situs penerbit (seperti ACM Digital Library) menampilkan verifikasi <em>"Verify you are human"</em>, tab peramban akan otomatis difokuskan. Silakan selesaikan centang verifikasi di tab tersebut; proses akan otomatis berlanjut setelah verifikasi selesai.
@@ -378,7 +378,7 @@
 
     <!-- Panduan Penggunaan -->
     <section class="card">
-      <h2 class="card-title">Cara Penggunaan & Format Input</h2>
+      <h2 class="card-title">Cara Penggunaan & Fitur Dashboard</h2>
       <div class="steps-list">
         <div class="step-item">
           <div class="step-num">1</div>
@@ -391,7 +391,7 @@
         <div class="step-item">
           <div class="step-num">2</div>
           <div class="step-content">
-            <h3>Siapkan Data di Excel (2 Kolom: ID & Link)</h3>
+            <h3>Mode 1: Scraper Link (ID & Link dari Excel)</h3>
             <p>Siapkan daftar tautan Anda di Microsoft Excel atau Google Sheets dalam format 2 kolom sederhana:</p>
             
             <table class="table-sample">
@@ -421,15 +421,23 @@
               </tbody>
             </table>
 
-            <p>Cukup salin (<em>Copy</em>) seluruh baris dan kolom tersebut dari Excel, lalu tempel (<em>Paste</em>) langsung ke kotak teks input di Dashboard.</p>
+            <p>Cukup salin (<em>Copy</em>) seluruh baris dan kolom tersebut dari Excel, lalu tempel (<em>Paste</em>) langsung ke kotak teks input di Dashboard. Setiap berkas sampul yang berhasil diunduh akan tersimpan di <code>Downloads/book-covers/</code>.</p>
           </div>
         </div>
 
         <div class="step-item">
           <div class="step-num">3</div>
           <div class="step-content">
-            <h3>Penamaan Berkas & Lokasi Unduhan</h3>
-            <p>Pilih pola penamaan berkas pada Dashboard (misalnya <strong>"Hanya ID"</strong>). Setiap berkas sampul yang berhasil diunduh akan otomatis dinamai sesuai nomor ID Anda (misalnya <code>1.jpg</code> atau <code>1.pdf</code>) dan tersimpan di folder bawaan peramban: <code>Downloads/book-covers/</code>.</p>
+            <h3>Mode 2: Konversi Folder PNG (Lokal)</h3>
+            <p>Pilih tab <strong>"📁 Konversi Folder PNG"</strong> di Dashboard jika Anda sudah memiliki folder cover di komputer (berisi PDF, GIF, JPG, WebP). Anda dapat memilih folder atau drag-and-drop file langsung untuk mengonversi semuanya menjadi berkas <code>.png</code> seragam di <code>Downloads/book-covers-png/</code>.</p>
+          </div>
+        </div>
+
+        <div class="step-item">
+          <div class="step-num">4</div>
+          <div class="step-content">
+            <h3>Perekapan Error & Salin Nomor Cepat</h3>
+            <p>Jika ada tautan/berkas yang gagal atau korup, kotak <strong>Log Error</strong> akan muncul secara otomatis. Anda dapat menekan tombol <strong>"📋 Salin Nomor Saja"</strong> untuk menyalin daftar nomor yang error (contoh: <code>3, 7, 12</code>) untuk langsung ditempelkan ke laporan Excel Anda.</p>
           </div>
         </div>
       </div>
