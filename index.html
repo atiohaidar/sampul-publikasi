@@ -278,6 +278,75 @@
       color: var(--text-main);
     }
 
+    /* Status Card Deteksi Ekstensi */
+    .status-card {
+      border-radius: 12px;
+      padding: 18px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+      transition: all 0.3s ease;
+    }
+
+    .status-card.uninstalled {
+      background: #fefce8;
+      border: 1px solid #fef08a;
+      color: #713f12;
+    }
+
+    .status-card.installed {
+      background: #f0fdf4;
+      border: 1px solid #bbf7d0;
+      color: #14532d;
+    }
+
+    .status-info {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .status-badge-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .uninstalled .status-badge-dot {
+      background: #eab308;
+      box-shadow: 0 0 0 3px rgba(234, 179, 8, 0.2);
+    }
+
+    .installed .status-badge-dot {
+      background: #22c55e;
+      box-shadow: 0 0 0 3px rgba(34, 197, 94, 0.2);
+    }
+
+    .status-title {
+      font-size: 15px;
+      font-weight: 700;
+      line-height: 1.3;
+    }
+
+    .status-sub {
+      font-size: 13px;
+      opacity: 0.85;
+    }
+
+    .btn-success {
+      background: #16a34a;
+      color: #ffffff;
+      border: 1px solid #16a34a;
+    }
+
+    .btn-success:hover {
+      background: #15803d;
+      border-color: #15803d;
+    }
+
     /* Footer */
     footer {
       text-align: center;
@@ -311,6 +380,22 @@
       </div>
     </header>
 
+    <!-- Banner Deteksi Status Ekstensi -->
+    <div id="extensionStatusBanner" class="status-card uninstalled">
+      <div class="status-info">
+        <div class="status-badge-dot"></div>
+        <div>
+          <div id="statusTitleText" class="status-title">Status: Ekstensi Belum Terpasang di Browser Ini</div>
+          <div id="statusSubText" class="status-sub">Jika Anda baru mengunduh berkas, silakan ikuti 5 langkah panduan instalasi di bawah.</div>
+        </div>
+      </div>
+      <div id="statusActionArea">
+        <a href="#installationSection" class="btn btn-secondary" style="font-size: 13px; padding: 6px 14px;">
+          Lihat Cara Pasang ↓
+        </a>
+      </div>
+    </div>
+
     <!-- Catatan Penting -->
     <div class="callout">
       <div class="callout-header">Catatan Penting Mengenai Hasil Unduhan & Keterbatasan</div>
@@ -331,7 +416,7 @@
     </div>
 
     <!-- Panduan Instalasi -->
-    <section class="card">
+    <section class="card" id="installationSection">
       <h2 class="card-title">Panduan Instalasi di Google Chrome</h2>
       <div class="steps-list">
         <div class="step-item">
@@ -448,6 +533,38 @@
     </footer>
 
   </div>
+
+  <!-- Script Deteksi Ekstensi -->
+  <script>
+    (function() {
+      const banner = document.getElementById('extensionStatusBanner');
+      const titleText = document.getElementById('statusTitleText');
+      const subText = document.getElementById('statusSubText');
+      const actionArea = document.getElementById('statusActionArea');
+
+      function updateStatus(detail) {
+        if (!banner) return;
+        banner.className = 'status-card installed';
+        const ver = (detail && detail.version) ? detail.version : '1.1.0';
+        titleText.innerHTML = 'Status: ✓ Ekstensi Sampul Publikasi Terpasang & Aktif (v' + ver + ')';
+        subText.innerText = 'Ekstensi siap digunakan! Anda dapat langsung membuka Dashboard Scraper penuh.';
+        
+        let dashUrl = (detail && detail.dashboardUrl) ? detail.dashboardUrl : 'dashboard/dashboard.html';
+        actionArea.innerHTML = '<a href="' + dashUrl + '" target="_blank" class="btn btn-success" style="font-size: 13px; padding: 8px 16px;">🚀 Buka Dashboard Scraper</a>';
+      }
+
+      // 1. Cek via atribut HTML jika content script sudah berjalan lebih awal
+      if (document.documentElement.getAttribute('data-extension-installed') === 'true') {
+        const ver = document.documentElement.getAttribute('data-extension-version') || '1.1.0';
+        updateStatus({ version: ver });
+      }
+
+      // 2. Dengarkan CustomEvent dari content script detector.js
+      window.addEventListener('SAMPUL_PUBLIKASI_INSTALLED', function(e) {
+        updateStatus(e.detail || {});
+      });
+    })();
+  </script>
 
 </body>
 </html>

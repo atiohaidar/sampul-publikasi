@@ -28,10 +28,24 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
+  "content_scripts": [
+    {
+      "matches": [
+        "http://*/*",
+        "https://*/*",
+        "file://*/*"
+      ],
+      "js": [
+        "content/detector.js"
+      ],
+      "run_at": "document_start"
+    }
+  ],
   "web_accessible_resources": [
     {
       "resources": [
-        "libs/pdf.worker.min.js"
+        "libs/pdf.worker.min.js",
+        "dashboard/dashboard.html"
       ],
       "matches": [
         "<all_urls>"
