@@ -1,0 +1,367 @@
+/**
+ * Popup logic for Scopus, Springer & IEEE Cover Scraper
+ */
+
+document.addEventListener('DOMContentLoaded', () => {
+  // Elements
+  const urlInput = document.getElementById('urlInput');
+  const urlCountBadge = document.getElementById('urlCountBadge');
+  const btnPasteSample = document.getElementById('btnPasteSample');
+  const btnClearInput = document.getElementById('btnClearInput');
+  const btnOpenDashboard = document.getElementById('btnOpenDashboard');
+  const btnOpenSidePanel = document.getElementById('btnOpenSidePanel');
+  const btnOpenPopout = document.getElementById('btnOpenPopout');
+  const btnBannerSidePanel = document.getElementById('btnBannerSidePanel');
+  const btnBannerPopout = document.getElementById('btnBannerPopout');
+  const popoutBanner = document.getElementById('popoutBanner');
+
+  const subfolderInput = document.getElementById('subfolderInput');
+  const namingPatternSelect = document.getElementById('namingPatternSelect');
+  const chkActiveTab = document.getElementById('chkActiveTab');
+  const chkDownloadCovers = document.getElementById('chkDownloadCovers');
+  const chkAutoCsv = document.getElementById('chkAutoCsv');
+
+  const btnStartScraping = document.getElementById('btnStartScraping');
+  const btnStopScraping = document.getElementById('btnStopScraping');
+  const btnSkipCurrent = document.getElementById('btnSkipCurrent');
+  const btnRetryFailed = document.getElementById('btnRetryFailed');
+  const retryFailedText = document.getElementById('retryFailedText');
+
+  const progressSection = document.getElementById('progressSection');
+  const progressText = document.getElementById('progressText');
+  const progressPercent = document.getElementById('progressPercent');
+  const progressBarFill = document.getElementById('progressBarFill');
+  const liveStatusMsg = document.getElementById('liveStatusMsg');
+
+  const summarySection = document.getElementById('summarySection');
+  const statTotal = document.getElementById('statTotal');
+  const statSuccess = document.getElementById('statSuccess');
+  const statFailed = document.getElementById('statFailed');
+  const btnExportCsv = document.getElementById('btnExportCsv');
+
+  let scraperEngine = new SpringerScraperEngine();
+  let scrapedResults = [];
+
+  // Deteksi mode tampilan (Normal Bubble, Popout Window, atau Side Panel)
+  const urlParams = new URLSearchParams(window.location.search);
+  const mode = urlParams.get('mode');
+  const autostart = urlParams.get('autostart') === '1';
+  const isNormalPopup = (mode !== 'popout' && mode !== 'sidepanel');
+
+  if (mode === 'popout') {
+    document.body.classList.add('mode-popout');
+    if (popoutBanner) popoutBanner.style.display = 'none';
+    if (btnOpenPopout) btnOpenPopout.style.display = 'none';
+  } else if (mode === 'sidepanel') {
+    document.body.classList.add('mode-sidepanel');
+    if (popoutBanner) popoutBanner.style.display = 'none';
+    if (btnOpenSidePanel) btnOpenSidePanel.style.display = 'none';
+  }
+
+  // Load saved settings if any
+  if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+    chrome.storage.local.get(['subfolder', 'namingPattern', 'downloadCovers', 'autoCsv', 'activeTab', 'pendingUrls', 'autoRun'], (data) => {
+      if (data.subfolder !== undefined) subfolderInput.value = data.subfolder;
+      if (data.namingPattern !== undefined && data.namingPattern !== 'title') {
+        namingPatternSelect.value = data.namingPattern;
+      } else {
+        namingPatternSelect.value = 'id_only';
+        chrome.storage.local.set({ namingPattern: 'id_only' });
+      }
+      if (data.downloadCovers !== undefined) chkDownloadCovers.checked = data.downloadCovers;
+      if (data.autoCsv !== undefined) chkAutoCsv.checked = data.autoCsv;
+      if (data.activeTab !== undefined && chkActiveTab) chkActiveTab.checked = data.activeTab;
+
+      // Transfer data URL jika berpindah dari popup biasa
+      if (data.pendingUrls) {
+        urlInput.value = data.pendingUrls;
+        updateCountBadge();
+        chrome.storage.local.remove(['pendingUrls']);
+      }
+
+      if (data.autoRun && autostart) {
+        chrome.storage.local.remove(['autoRun']);
+        setTimeout(() => {
+          btnStartScraping.click();
+        }, 350);
+      }
+    });
+  }
+
+  // Save settings on change
+  const saveSettings = () => {
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      chrome.storage.local.set({
+        subfolder: subfolderInput.value.trim(),
+        namingPattern: namingPatternSelect.value,
+        downloadCovers: chkDownloadCovers.checked,
+        autoCsv: chkAutoCsv.checked,
+        activeTab: chkActiveTab ? chkActiveTab.checked : true
+      });
+    }
+  };
+
+  subfolderInput.addEventListener('change', saveSettings);
+  namingPatternSelect.addEventListener('change', saveSettings);
+  if (chkActiveTab) chkActiveTab.addEventListener('change', saveSettings);
+  chkDownloadCovers.addEventListener('change', saveSettings);
+  chkAutoCsv.addEventListener('change', saveSettings);
+
+  // Fungsi membuka Side Panel
+  const openSidePanel = () => {
+    saveSettings();
+    chrome.storage.local.set({ pendingUrls: urlInput.value }, () => {
+      if (typeof chrome !== 'undefined' && chrome.sidePanel && chrome.sidePanel.open) {
+        chrome.windows.getCurrent((w) => {
+          if (w && w.id) {
+            chrome.sidePanel.open({ windowId: w.id });
+            if (isNormalPopup) window.close();
+          }
+        });
+      } else if (typeof chrome !== 'undefined' && chrome.runtime) {
+        chrome.runtime.sendMessage({ action: 'OPEN_SIDE_PANEL' }, () => {
+          if (isNormalPopup) window.close();
+        });
+      }
+    });
+  };
+
+  // Fungsi membuka Popout Window
+  const openPopout = (withAutoStart = false) => {
+    saveSettings();
+    chrome.storage.local.set({ pendingUrls: urlInput.value, autoRun: withAutoStart }, () => {
+      if (typeof chrome !== 'undefined' && chrome.runtime) {
+        chrome.runtime.sendMessage({ action: 'OPEN_POPOUT', autostart: withAutoStart }, () => {
+          if (isNormalPopup) window.close();
+        });
+      }
+    });
+  };
+
+  if (btnOpenSidePanel) btnOpenSidePanel.addEventListener('click', openSidePanel);
+  if (btnBannerSidePanel) btnBannerSidePanel.addEventListener('click', openSidePanel);
+  if (btnOpenPopout) btnOpenPopout.addEventListener('click', () => openPopout(false));
+  if (btnBannerPopout) btnBannerPopout.addEventListener('click', () => openPopout(false));
+
+  // Parse URLs and ID pairs (supports both plain URLs and ID [TAB/Comma] URL pairs from Excel)
+  function parseInputEntries(rawText) {
+    if (!rawText) return [];
+    const lines = rawText.split(/[\r\n]+/);
+    const entries = [];
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+
+      // Abaikan baris header tabel jika ada (misal "ID \t Link Scopus")
+      if (/^(no|id|nomor|link)\b/i.test(line) && !line.includes('http')) {
+        continue;
+      }
+
+      // Cari URL dalam baris
+      const urlMatch = line.match(/(https?:\/\/[^\s"',]+)/i);
+      if (urlMatch) {
+        const url = urlMatch[1];
+        // Cek apakah ada ID di depan URL
+        const prefix = line.substring(0, urlMatch.index).trim().replace(/[\t,;|]+$/, '').trim();
+
+        let id = '';
+        if (prefix) {
+          id = prefix.replace(/^["']|["']$/g, '');
+        } else {
+          // Ambil Scopus ID dari URL jika ada
+          const scopusIdMatch = url.match(/\/publications\/(\d+)/i) || url.match(/eid=2-s2\.0-(\d+)/i);
+          id = scopusIdMatch ? scopusIdMatch[1] : String(entries.length + 1);
+        }
+
+        entries.push({ id, url });
+      }
+    }
+
+    return entries;
+  }
+
+  function updateCountBadge() {
+    const entries = parseInputEntries(urlInput.value);
+    urlCountBadge.textContent = `${entries.length} link`;
+  }
+
+  urlInput.addEventListener('input', updateCountBadge);
+
+  // Paste sample link (Springer, IEEE, & ScienceDirect) dengan format ID [TAB] URL
+  btnPasteSample.addEventListener('click', () => {
+    const samples = [
+      '1\thttps://doi.org/10.1007/978-3-032-11612-3_56',
+      '2\thttps://ieeexplore.ieee.org/xpl/conhome/11519603/proceeding',
+      '3\thttps://doi.org/10.1016/j.prostr.2023.12.041',
+      '4\thttps://doi.org/10.1145/3700706.3700723'
+    ];
+    const current = urlInput.value.trim();
+    const toAdd = samples.filter(s => !current.includes(s.split('\t')[1]));
+    if (toAdd.length > 0) {
+      urlInput.value = (current ? current + '\n' : '') + toAdd.join('\n');
+    }
+    updateCountBadge();
+  });
+
+  // Clear input
+  btnClearInput.addEventListener('click', () => {
+    urlInput.value = '';
+    updateCountBadge();
+  });
+
+  // Open Fullscreen Dashboard
+  btnOpenDashboard.addEventListener('click', () => {
+    saveSettings();
+    if (typeof chrome !== 'undefined' && chrome.tabs) {
+      const dashboardUrl = chrome.runtime.getURL('dashboard/dashboard.html');
+      chrome.tabs.create({ url: dashboardUrl });
+      if (isNormalPopup) window.close();
+    } else {
+      window.open('../dashboard/dashboard.html', '_blank');
+    }
+  });
+
+  // Start Scraping
+  btnStartScraping.addEventListener('click', async () => {
+    const entries = parseInputEntries(urlInput.value);
+    if (entries.length === 0) {
+      alert('Silakan masukkan minimal 1 URL Scopus / Springer / IEEE yang valid.');
+      urlInput.focus();
+      return;
+    }
+
+    saveSettings();
+
+    // Handoff jika dibuka di popup bubble biasa
+    if (isNormalPopup && chkActiveTab && chkActiveTab.checked) {
+      openPopout(true);
+      return;
+    }
+
+    scrapedResults = [];
+    scraperEngine = new SpringerScraperEngine();
+
+    // UI state
+    btnStartScraping.disabled = true;
+    btnStopScraping.classList.remove('hidden');
+    if (btnSkipCurrent) btnSkipCurrent.classList.remove('hidden');
+    if (btnRetryFailed) btnRetryFailed.classList.add('hidden');
+    progressSection.classList.remove('hidden');
+    summarySection.classList.add('hidden');
+
+    progressBarFill.style.width = '0%';
+    progressPercent.textContent = '0%';
+    progressText.textContent = `Memulai ${entries.length} link...`;
+    liveStatusMsg.textContent = 'Membuka tab dan mengikuti alur navigasi...';
+
+    statTotal.textContent = entries.length;
+    statSuccess.textContent = '0';
+    statFailed.textContent = '0';
+
+    let successCount = 0;
+    let failedCount = 0;
+
+    await scraperEngine.run({
+      urls: entries,
+      downloadCovers: chkDownloadCovers.checked,
+      subfolder: subfolderInput.value.trim() || 'book-covers',
+      namingPattern: namingPatternSelect.value,
+      delayMs: 1500,
+      activeTab: chkActiveTab ? chkActiveTab.checked : true,
+
+      onProgress: (info) => {
+        progressBarFill.style.width = `${info.percent}%`;
+        progressPercent.textContent = `${info.percent}%`;
+        progressText.textContent = `Buku ${info.index} dari ${info.total}`;
+        liveStatusMsg.textContent = info.status || info.url;
+      },
+
+      onItemSuccess: (book) => {
+        successCount++;
+        statSuccess.textContent = successCount;
+        liveStatusMsg.textContent = `✓ Sukses: ${book.title}`;
+      },
+
+      onItemError: (failedItem, err) => {
+        failedCount++;
+        statFailed.textContent = failedCount;
+        liveStatusMsg.textContent = `✕ Gagal: ${failedItem.status || failedItem.sourceUrl}`;
+      },
+
+      onFinished: (summary) => {
+        scrapedResults = summary.results;
+        btnStartScraping.disabled = false;
+        btnStopScraping.classList.add('hidden');
+        if (btnSkipCurrent) btnSkipCurrent.classList.add('hidden');
+        summarySection.classList.remove('hidden');
+
+        // Tampilkan tombol Retry jika ada yang gagal
+        if (summary.failedCount > 0 && btnRetryFailed) {
+          if (retryFailedText) {
+            retryFailedText.textContent = `Coba Lagi yang Gagal (${summary.failedCount} link)`;
+          }
+          btnRetryFailed.classList.remove('hidden');
+        } else if (btnRetryFailed) {
+          btnRetryFailed.classList.add('hidden');
+        }
+
+        progressBarFill.style.width = '100%';
+        progressPercent.textContent = '100%';
+        progressText.textContent = summary.wasCancelled ? 'Dihentikan oleh pengguna.' : 'Selesai!';
+        liveStatusMsg.textContent = `Selesai. Sukses: ${summary.successCount} | Gagal: ${summary.failedCount}`;
+
+        // Auto download CSV if enabled
+        if (chkAutoCsv.checked && summary.results.length > 0) {
+          setTimeout(() => {
+            downloadCsv(summary.results, 'metadata_scopus_springer_ieee.csv');
+          }, 600);
+        }
+      }
+    });
+  });
+
+  // Skip Current Tab
+  if (btnSkipCurrent) {
+    btnSkipCurrent.addEventListener('click', () => {
+      if (scraperEngine) {
+        scraperEngine.skipCurrent();
+        liveStatusMsg.textContent = '⏩ Melewati link ini, lanjut berikutnya...';
+      }
+    });
+  }
+
+  // Retry Failed
+  if (btnRetryFailed) {
+    btnRetryFailed.addEventListener('click', () => {
+      const failedUrls = scraperEngine ? scraperEngine.getFailedUrls() : [];
+      if (failedUrls.length === 0) {
+        alert('Tidak ada link yang gagal untuk dicoba ulang.');
+        return;
+      }
+      urlInput.value = failedUrls.join('\n');
+      updateCountBadge();
+      btnRetryFailed.classList.add('hidden');
+      btnStartScraping.click();
+    });
+  }
+
+  // Stop Scraping
+  btnStopScraping.addEventListener('click', () => {
+    if (scraperEngine) {
+      scraperEngine.cancel();
+      liveStatusMsg.textContent = 'Menghentikan proses...';
+    }
+  });
+
+  // Export CSV button
+  btnExportCsv.addEventListener('click', () => {
+    if (scrapedResults.length === 0) {
+      alert('Belum ada data yang berhasil di-scrape.');
+      return;
+    }
+    downloadCsv(scrapedResults, 'metadata_scopus_springer_ieee.csv');
+  });
+
+  updateCountBadge();
+});

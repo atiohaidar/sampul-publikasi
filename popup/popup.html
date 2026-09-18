@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scopus, Springer & IEEE Cover Scraper</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-brand">
+        <div class="brand-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+          </svg>
+        </div>
+        <div class="brand-title">
+          <h1>Cover & Metadata Scraper</h1>
+          <span class="version-badge">Springer + IEEE + Elsevier</span>
+        </div>
+      </div>
+      <div class="header-tools">
+        <button id="btnOpenSidePanel" class="btn-icon" title="Buka di Side Panel (Menempel di samping browser - tidak akan tertutup)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="15" y1="3" x2="15" y2="21"></line>
+          </svg>
+          <span>Side Panel</span>
+        </button>
+        <button id="btnOpenPopout" class="btn-icon" title="Buka di Jendela Mengambang (Popout terpisah - tidak akan tertutup)">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="4" y="4" width="16" height="16" rx="2" ry="2"></rect>
+            <line x1="9" y1="4" x2="9" y2="8"></line>
+            <line x1="4" y1="9" x2="20" y2="9"></line>
+          </svg>
+          <span>Popout</span>
+        </button>
+        <button id="btnOpenDashboard" class="btn-icon" title="Buka Tab Layar Penuh">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+            <polyline points="15 3 21 3 21 9"></polyline>
+            <line x1="10" y1="14" x2="21" y2="3"></line>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Info Banner (Hanya aktif jika dibuka di popup bubble biasa) -->
+    <div id="popoutBanner" class="popout-banner">
+      <div class="popout-banner-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="16" x2="12" y2="12"></line>
+          <line x1="12" y1="8" x2="12.01" y2="8"></line>
+        </svg>
+      </div>
+      <div class="popout-banner-body">
+        <span class="banner-title">Agar Tampilan Tidak Hilang Saat Tab Membuka:</span>
+        <p class="banner-desc">Chrome otomatis menutup popup kecil saat tab baru difokuskan. Gunakan <b>Side Panel</b> atau <b>Jendela Popout</b> agar jendela tetap terbuka sambil Anda melihat tab berjalan.</p>
+        <div class="banner-actions">
+          <button id="btnBannerSidePanel" type="button" class="btn-banner-action">📌 Buka di Side Panel</button>
+          <button id="btnBannerPopout" type="button" class="btn-banner-action">🗗 Jendela Popout</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main Content -->
+    <main class="app-main">
+      <!-- Input Section -->
+      <section class="section-card">
+        <div class="section-header">
+          <label for="urlInput" class="section-title">
+            Daftar Link Scopus / Springer / IEEE
+            <span id="urlCountBadge" class="count-badge">0 link</span>
+          </label>
+          <div class="header-actions">
+            <button id="btnPasteSample" class="btn-text" type="button">Isi Contoh</button>
+            <button id="btnClearInput" class="btn-text btn-text-danger" type="button">Hapus</button>
+          </div>
+        </div>
+        <textarea 
+          id="urlInput" 
+          placeholder="Paste kolom Excel (ID [TAB] Link Scopus) atau URL di sini:&#10;Contoh:&#10;1	https://www.scopus.com/pages/publications/85215314491...&#10;2	https://www.scopus.com/pages/publications/...&#10;&#10;* Nama file cover (JPG / PDF) otomatis dinamai sesuai ID!"
+          rows="5"
+        ></textarea>
+      </section>
+
+      <!-- Settings Accordion / Panel -->
+      <details class="settings-details">
+        <summary class="settings-summary">
+          <span>Pengaturan Unduhan & Nama File</span>
+          <svg class="chevron-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="6 9 12 15 18 9"></polyline>
+          </svg>
+        </summary>
+        <div class="settings-content">
+          <div class="form-group">
+            <label for="subfolderInput">Subfolder Penyimpanan Cover:</label>
+            <input type="text" id="subfolderInput" value="book-covers" placeholder="Contoh: book-covers">
+            <small class="form-hint">Akan disimpan di: <code>Downloads/[subfolder]/[nama-file]</code></small>
+          </div>
+
+          <div class="form-group">
+            <label for="namingPatternSelect">Format Nama File Cover:</label>
+            <select id="namingPatternSelect">
+              <option value="id_only" selected>Sesuai ID / Nomor (Contoh: 1.pdf / 1.jpg)</option>
+              <option value="title">Judul Buku / Conference Saja</option>
+              <option value="isbn_title">[ISBN/ID] Judul Buku / Conference</option>
+              <option value="index_title">001 - Judul Buku / Conference</option>
+            </select>
+          </div>
+
+          <div class="form-checkboxes">
+            <label class="checkbox-label" style="font-weight: 600; color: #025e8d;">
+              <input type="checkbox" id="chkActiveTab" checked>
+              <span>Fokuskan Tab (Ikuti proses secara visual)</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="chkDownloadCovers" checked>
+              <span>Unduh file cover otomatis (JPG / PDF)</span>
+            </label>
+            <label class="checkbox-label">
+              <input type="checkbox" id="chkAutoCsv" checked>
+              <span>Unduh file CSV otomatis saat selesai</span>
+            </label>
+          </div>
+        </div>
+      </details>
+
+      <!-- Action Buttons -->
+      <div class="action-buttons">
+        <button id="btnStartScraping" class="btn-primary" type="button">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="5 3 19 12 5 21 5 3"></polygon>
+          </svg>
+          <span>Mulai Scraping & Download</span>
+        </button>
+        <button id="btnSkipCurrent" class="btn-warning hidden" type="button" title="Lewati link ini dan langsung lanjut ke link berikutnya">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="5 4 15 12 5 20 5 4"></polygon>
+            <line x1="19" y1="5" x2="19" y2="19"></line>
+          </svg>
+          <span>Lewati</span>
+        </button>
+        <button id="btnStopScraping" class="btn-danger hidden" type="button">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="6" y="6" width="12" height="12"></rect>
+          </svg>
+          <span>Stop</span>
+        </button>
+      </div>
+
+      <!-- Live Progress -->
+      <section id="progressSection" class="progress-section hidden">
+        <div class="progress-header">
+          <span id="progressText" class="progress-text">Memproses...</span>
+          <span id="progressPercent" class="progress-percent">0%</span>
+        </div>
+        <div class="progress-bar-track">
+          <div id="progressBarFill" class="progress-bar-fill" style="width: 0%;"></div>
+        </div>
+        <div id="liveStatusMsg" class="live-status-msg">Menyiapkan tab browser...</div>
+      </section>
+
+      <!-- Stats Summary & Export -->
+      <section id="summarySection" class="summary-section hidden">
+        <div class="stats-grid">
+          <div class="stat-card">
+            <span class="stat-num" id="statTotal">0</span>
+            <span class="stat-label">Total Link</span>
+          </div>
+          <div class="stat-card stat-success">
+            <span class="stat-num" id="statSuccess">0</span>
+            <span class="stat-label">Sukses</span>
+          </div>
+          <div class="stat-card stat-failed">
+            <span class="stat-num" id="statFailed">0</span>
+            <span class="stat-label">Gagal</span>
+          </div>
+        </div>
+
+        <button id="btnRetryFailed" class="btn-warning hidden" type="button" style="width: 100%; margin-bottom: 8px;">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="1 4 1 10 7 10"></polyline>
+            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+          </svg>
+          <span id="retryFailedText">Coba Lagi Link yang Gagal</span>
+        </button>
+
+        <button id="btnExportCsv" class="btn-secondary" type="button">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          <span>Unduh File CSV Metadata</span>
+        </button>
+      </section>
+    </main>
+
+    <!-- Footer -->
+    <footer class="app-footer">
+      <span>Mendukung Springer Nature, IEEE Xplore, ScienceDirect (Elsevier) & ACM Digital Library</span>
+    </footer>
+  </div>
+
+  <!-- Scripts -->
+  <script src="../libs/pdf.min.js"></script>
+  <script src="../utils/sanitize.js"></script>
+  <script src="../utils/parser.js"></script>
+  <script src="../utils/ieee-parser.js"></script>
+  <script src="../utils/sciencedirect-parser.js"></script>
+  <script src="../utils/acm-parser.js"></script>
+  <script src="../utils/pdf-to-image.js"></script>
+  <script src="../utils/tab-automator.js"></script>
+  <script src="../utils/csv-exporter.js"></script>
+  <script src="../utils/scraper-engine.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

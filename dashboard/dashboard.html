@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scopus, Springer & IEEE Scraper Dashboard</title>
+  <link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+  <div class="dashboard-layout">
+    <!-- Sidebar / Config Panel -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+          </svg>
+          <div>
+            <h2>Book & Proceeding Scraper</h2>
+            <span class="subtitle">Scopus ➔ Springer, IEEE & ScienceDirect</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="sidebar-content">
+        <!-- URLs Input Area -->
+        <div class="panel-box">
+          <div class="panel-header">
+            <label for="dashUrlInput">Daftar Link Input</label>
+            <span id="dashUrlCount" class="badge">0 link</span>
+          </div>
+          <textarea 
+            id="dashUrlInput" 
+            placeholder="Paste kolom Excel (ID [TAB] Link Scopus) atau URL di sini...&#10;Contoh:&#10;1	https://www.scopus.com/pages/publications/85215314491...&#10;2	https://www.scopus.com/pages/publications/...&#10;&#10;* Nama file cover (JPG / PDF) otomatis dinamai sesuai ID!"
+            rows="8"
+          ></textarea>
+          <div class="input-actions">
+            <button id="btnDashSample" class="btn-sm btn-ghost" type="button">Contoh Springer</button>
+            <button id="btnDashSampleIeee" class="btn-sm btn-ghost" type="button">Contoh IEEE</button>
+            <button id="btnDashSampleSd" class="btn-sm btn-ghost" type="button">Contoh Elsevier</button>
+            <button id="btnDashSampleAcm" class="btn-sm btn-ghost" type="button">Contoh ACM</button>
+            <button id="btnDashImportFile" class="btn-sm btn-ghost" type="button">Impor File</button>
+            <input type="file" id="fileInputTxt" accept=".txt,.csv" style="display: none;">
+            <button id="btnDashClear" class="btn-sm btn-ghost-danger" type="button">Bersihkan</button>
+          </div>
+        </div>
+
+        <!-- Download & Naming Settings -->
+        <div class="panel-box">
+          <h3 class="panel-title">Pengaturan Unduhan & Tab</h3>
+          
+          <div class="form-item">
+            <label for="dashSubfolder">Subfolder Penyimpanan Cover:</label>
+            <input type="text" id="dashSubfolder" value="book-covers" placeholder="book-covers">
+            <span class="hint">Tersimpan di: <code>Downloads/[subfolder]/[nama-file]</code></span>
+          </div>
+
+          <div class="form-item">
+            <label for="dashNamingPattern">Format Nama Cover:</label>
+            <select id="dashNamingPattern">
+              <option value="id_only" selected>Sesuai ID / Nomor (Contoh: 1.pdf / 1.jpg)</option>
+              <option value="title">Judul Buku / Conference Saja</option>
+              <option value="isbn_title">[ISBN/ID] Judul Buku / Conference</option>
+              <option value="index_title">001 - Judul Buku / Conference</option>
+            </select>
+          </div>
+
+          <div class="form-item">
+            <label for="dashDelay">Jeda Antar Link (Detik):</label>
+            <input type="number" id="dashDelay" value="1.5" min="0.5" max="10" step="0.5">
+            <span class="hint">Waktu tunggu sebelum membuka link berikutnya</span>
+          </div>
+
+          <div class="form-checkboxes">
+            <label class="chk-label" style="font-weight: 600; color: #025e8d;">
+              <input type="checkbox" id="dashChkActiveTab" checked>
+              <span>Fokuskan Tab (Ikuti proses pembukaan tab secara visual)</span>
+            </label>
+            <label class="chk-label">
+              <input type="checkbox" id="dashChkCovers" checked>
+              <span>Download Cover Gambar (JPG) & PDF Otomatis</span>
+            </label>
+            <label class="chk-label">
+              <input type="checkbox" id="dashChkAutoCsv" checked>
+              <span>Download File CSV Otomatis Saat Selesai</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Action Buttons -->
+        <div class="action-panel">
+          <button id="btnDashStart" class="btn-primary" type="button">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="5 3 19 12 5 21 5 3"></polygon>
+            </svg>
+            <span>Mulai Otomasi Tab & Download</span>
+          </button>
+          <button id="btnDashSkip" class="btn-warning hidden" type="button" title="Lewati link yang sedang berjalan dan langsung lanjut ke link berikutnya">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="5 4 15 12 5 20 5 4"></polygon>
+              <line x1="19" y1="5" x2="19" y2="19"></line>
+            </svg>
+            <span>Lewati</span>
+          </button>
+          <button id="btnDashStop" class="btn-danger hidden" type="button">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="6" y="6" width="12" height="12"></rect>
+            </svg>
+            <span>Hentikan</span>
+          </button>
+          <button id="btnDashRetryFailed" class="btn-warning hidden" type="button" style="width: 100%; margin-top: 6px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="1 4 1 10 7 10"></polyline>
+              <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"></path>
+            </svg>
+            <span id="dashRetryText">Coba Lagi yang Gagal</span>
+          </button>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Board Area -->
+    <main class="main-board">
+      <!-- Status & Metrics Header -->
+      <section class="metrics-bar">
+        <div class="metric-card">
+          <span class="m-label">Total Link</span>
+          <span class="m-val" id="metricTotal">0</span>
+        </div>
+        <div class="metric-card metric-success">
+          <span class="m-label">Berhasil Diambil</span>
+          <span class="m-val" id="metricSuccess">0</span>
+        </div>
+        <div class="metric-card metric-failed">
+          <span class="m-label">Gagal / Error</span>
+          <span class="m-val" id="metricFailed">0</span>
+        </div>
+        <div class="metric-actions">
+          <button id="btnDashExportCsv" class="btn-outline" disabled>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span>Export CSV</span>
+          </button>
+        </div>
+      </section>
+
+      <!-- Live Progress Bar -->
+      <section id="dashProgressBox" class="progress-box hidden">
+        <div class="progress-info">
+          <span id="dashProgressStatus">Menyiapkan tab browser...</span>
+          <span id="dashProgressPercent">0%</span>
+        </div>
+        <div class="p-track">
+          <div id="dashProgressBar" class="p-bar" style="width: 0%;"></div>
+        </div>
+        <div id="dashLiveDetail" style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;"></div>
+      </section>
+
+      <!-- Data Table Area -->
+      <section class="table-container">
+        <div class="table-header-row">
+          <h3>Hasil Scraping Cover & Metadata</h3>
+          <span class="table-note">Tab terbuka secara visual ➔ Menavigasi Publisher ➔ Mengunduh Cover ➔ Menutup tab</span>
+        </div>
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th width="60">ID</th>
+                <th width="70">Cover</th>
+                <th>Judul Buku / Conference & Paper Asal</th>
+                <th width="140">Publisher / ID</th>
+                <th width="140">Editor / Tahun</th>
+                <th width="180">Nama File Cover</th>
+                <th width="80">Status</th>
+                <th width="75">Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="dashTableBody">
+              <tr class="empty-row">
+                <td colspan="8">
+                  <div class="empty-state">
+                    <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#94a3b8" stroke-width="1.5">
+                      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"></path>
+                      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"></path>
+                    </svg>
+                    <p>Belum ada data buku / proceeding.</p>
+                    <span>Masukkan link Scopus / Springer / IEEE / ScienceDirect / ACM di kiri, lalu klik <b>Mulai Otomasi Tab & Download</b>.</span>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Scripts -->
+  <script src="../libs/pdf.min.js"></script>
+  <script src="../utils/sanitize.js"></script>
+  <script src="../utils/parser.js"></script>
+  <script src="../utils/ieee-parser.js"></script>
+  <script src="../utils/sciencedirect-parser.js"></script>
+  <script src="../utils/acm-parser.js"></script>
+  <script src="../utils/pdf-to-image.js"></script>
+  <script src="../utils/tab-automator.js"></script>
+  <script src="../utils/csv-exporter.js"></script>
+  <script src="../utils/scraper-engine.js"></script>
+  <script src="dashboard.js"></script>
+</body>
+</html>
