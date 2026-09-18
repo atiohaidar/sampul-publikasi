@@ -641,7 +641,7 @@ class TabAutomator {
         }
 
         // Simpan kandidat terbaik yang mungkin menjadi cover (proceedings/prelims/item non-paper)
-        let bestOverallCandidate = (ieeeProceedingData.coverFound && ieeeProceedingData.priority >= 80)
+        let bestOverallCandidate = (ieeeProceedingData.coverFound)
           ? {
               coverTitle: ieeeProceedingData.coverTitle,
               coverPdfUrl: ieeeProceedingData.coverPdfUrl,
@@ -659,9 +659,10 @@ class TabAutomator {
                 }
               : null);
 
-        // Jika di halaman awal belum ada Cover standar (Prioritas >= 80),
-        // telusuri paginasi ke set halaman berikutnya hingga mencapai halaman terakhir:
-        if (!ieeeProceedingData.coverFound || ieeeProceedingData.priority < 80) {
+        // Hanya berhenti di halaman 1 jika ditemukan Cover Page Murni (Prioritas 100).
+        // Jika hanya dokumen prosiding/front matter (Prioritas 80) atau paper biasa,
+        // tetap telusuri hingga halaman terakhir (misal hlm 4) untuk mencari Cover Page asli.
+        if (!ieeeProceedingData.coverFound || ieeeProceedingData.priority < 100) {
           let currentPagin = ieeeProceedingData.pagination || { isLastPage: true };
           const visitedPages = new Set([currentPagin.currentPage || 1]);
           let jumpCount = 0;
@@ -684,7 +685,7 @@ class TabAutomator {
             }
 
             visitedPages.add(targetPage);
-            onStatus(`Cover belum ada di hlm ${currentPagin.currentPage}. Menelusuri halaman IEEE berikutnya (hlm ${targetPage})...`);
+            onStatus(`Memeriksa halaman IEEE selanjutnya (hlm ${targetPage})...`);
 
             const baseUrl = currentUrl.split('?')[0];
             const nextPageUrl = `${baseUrl}?pageNumber=${targetPage}`;
@@ -705,8 +706,8 @@ class TabAutomator {
                 ieeeProceedingData.year = pageData.year;
               }
 
-              // Jika ditemukan Cover (Prio 100) atau Proceedings/Front Matter (Prio 80)
-              if (pageData.coverFound && pageData.priority >= 80) {
+              // Jika ditemukan Cover Murni (Prioritas 100), langsung ambil
+              if (pageData.coverFound && pageData.priority === 100) {
                 ieeeProceedingData = pageData;
                 break;
               }
@@ -727,7 +728,7 @@ class TabAutomator {
           }
 
           // Jika sudah sampai di blok halaman terakhir namun belum di nomor halaman tertinggi pada blok tersebut:
-          if ((!ieeeProceedingData.coverFound || ieeeProceedingData.priority < 80) && currentPagin.maxVisiblePage && !visitedPages.has(currentPagin.maxVisiblePage)) {
+          if ((!ieeeProceedingData.coverFound || ieeeProceedingData.priority < 100) && currentPagin.maxVisiblePage && !visitedPages.has(currentPagin.maxVisiblePage)) {
             const finalPage = currentPagin.maxVisiblePage;
             visitedPages.add(finalPage);
             onStatus(`Membuka halaman paling akhir IEEE (hlm ${finalPage})...`);
@@ -744,7 +745,7 @@ class TabAutomator {
 
             const finalPageData = await this.executeInTab(tabId, scanIeeePageFunc);
             if (finalPageData && finalPageData.success) {
-              if (finalPageData.coverFound && finalPageData.priority >= 80) {
+              if (finalPageData.coverFound && finalPageData.priority === 100) {
                 ieeeProceedingData = finalPageData;
               } else if (finalPageData.bestCandidate && (!bestOverallCandidate || finalPageData.bestCandidate.priority > (bestOverallCandidate.priority || 0))) {
                 bestOverallCandidate = {
