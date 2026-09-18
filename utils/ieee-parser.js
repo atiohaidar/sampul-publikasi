@@ -85,11 +85,11 @@ function parseIeeeProceedingPage(docOrHtml, sourceUrl = '') {
     year = yearMatch[1] || yearMatch[2];
   }
 
-  // Helper: Deteksi judul cover langsung (Cover, Front Cover, Cover Page, Back Cover)
+  // Helper: Deteksi judul cover langsung (Cover, Front Cover, Cover Page, Back Cover, Title Page i/ii/1)
   // Menghindari false positive pada istilah paper seperti "coverage" atau "undercover"
   const isDirectCover = (title) => {
     const t = (title || '').trim();
-    if (/\b(?:front\s*cover|back\s*cover|cover\s*page|inside\s*(?:front\s*)?cover)\b/i.test(t)) return true;
+    if (/\b(?:front\s*cover|back\s*cover|cover\s*page|inside\s*(?:front\s*)?cover|title\s*page(?:\s+[ivxlcdm\d]+)?)\b/i.test(t)) return true;
     if (/\bcovers?\b/i.test(t)) {
       if (/coverage|discovering|recovering|undercover/i.test(t)) return false;
       if (/\b(?:radio|network|land|cloud|spatial|code|test|fault|sensor|depth)\s+cover/i.test(t)) return false;
