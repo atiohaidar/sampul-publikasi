@@ -147,9 +147,14 @@ document.addEventListener('DOMContentLoaded', () => {
   // Sample ACM Digital Library URL dengan format ID [TAB] URL
   if (btnDashSampleAcm) {
     btnDashSampleAcm.addEventListener('click', () => {
-      const sample = '5\thttps://doi.org/10.1145/3700706.3700723';
-      if (!dashUrlInput.value.includes(sample.split('\t')[1])) {
-        dashUrlInput.value = (dashUrlInput.value.trim() ? dashUrlInput.value.trim() + '\n' : '') + sample;
+      const samples = [
+        '5\thttps://doi.org/10.1145/3700706.3700723',
+        '6\thttps://doi.org/10.14778/3725688.3725716'
+      ];
+      const current = dashUrlInput.value.trim();
+      const toAdd = samples.filter(s => !current.includes(s.split('\t')[1]));
+      if (toAdd.length > 0) {
+        dashUrlInput.value = (current ? current + '\n' : '') + toAdd.join('\n');
       }
       updateUrlCount();
     });

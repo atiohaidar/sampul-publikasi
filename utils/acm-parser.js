@@ -1,10 +1,10 @@
-﻿/**
+/**
  * utils/acm-parser.js
  * ============================================================
  * Parser untuk ACM Digital Library (dl.acm.org / acm.org):
- * 1. Halaman Paper/Article: Ekstrak judul paper & link Proceeding induk (/doi/proceedings/...)
- * 2. Halaman Proceeding: Ekstrak judul proceeding, conference, cover (.cover.jpg atau Front matter PDF),
- *    ISBN, penerbit (ACM), dan tahun publikasi.
+ * 1. Halaman Paper/Article: Ekstrak judul paper & link publikasi induk (/doi/proceedings/... atau /toc/...)
+ * 2. Halaman Proceeding / Journal TOC: Ekstrak judul prosiding/jurnal, cover (.cover.jpg atau Front matter PDF),
+ *    Editor, ISBN/ISSN, penerbit, dan tahun publikasi.
  * ============================================================
  */
 
@@ -24,34 +24,32 @@ function parseAcmArticleHtml(htmlOrDoc, currentUrl = '') {
     paperTitle = titleEl.textContent.trim();
   }
 
-  // 2. Ekstrak Link Proceeding Induk
+  // 2. Ekstrak Link Publikasi Induk (Conference Proceeding / Journal TOC)
   let proceedingUrl = '';
   let preliminaryProceedingTitle = '';
 
-  const citationBookLink = doc.querySelector(
-    '.core-self-citation [property="isPartOf"] a[href*="/doi/proceedings/"], .core-self-citation a[href*="/doi/proceedings/"]'
+  const citationParentLink = doc.querySelector(
+    '.core-self-citation .core-enumeration a[href*="/toc/"], ' +
+    '.core-self-citation [property="isPartOf"] a[href*="/doi/proceedings/"], ' +
+    '.core-self-citation [property="isPartOf"] a[href*="/toc/"], ' +
+    '.core-self-citation a[href*="/doi/proceedings/"], ' +
+    '.core-self-citation a[href*="/toc/"], ' +
+    '.core-enumeration a[href*="/toc/"], ' +
+    'a[href*="/doi/proceedings/"], a[href*="/toc/"]'
   );
-  if (citationBookLink) {
-    const href = citationBookLink.getAttribute('href') || '';
-    proceedingUrl = href.startsWith('http') ? href : ('https://dl.acm.org' + (href.startsWith('/') ? '' : '/') + href);
-    preliminaryProceedingTitle = citationBookLink.textContent.trim();
-  }
 
-  if (!proceedingUrl) {
-    const anyProcLink = doc.querySelector('a[href*="/doi/proceedings/"]');
-    if (anyProcLink) {
-      const href = anyProcLink.getAttribute('href') || '';
-      proceedingUrl = href.startsWith('http') ? href : ('https://dl.acm.org' + (href.startsWith('/') ? '' : '/') + href);
-      preliminaryProceedingTitle = anyProcLink.textContent.trim();
-    }
+  if (citationParentLink) {
+    const href = citationParentLink.getAttribute('href') || '';
+    proceedingUrl = href.startsWith('http') ? href : ('https://dl.acm.org' + (href.startsWith('/') ? '' : '/') + href);
+    preliminaryProceedingTitle = citationParentLink.textContent.trim().replace(/\s+/g, ' ');
   }
 
   // 3. Ekstrak DOI Paper
   let paperDoi = '';
-  const doiEl = doc.querySelector('.core-self-citation .doi a, a[href*="doi.org/10.1145/"], meta[name="dc.Identifier"][scheme="doi"]');
+  const doiEl = doc.querySelector('.core-self-citation .doi a, a[href*="doi.org/10."], meta[name="dc.Identifier"][scheme="doi"]');
   if (doiEl) {
     const doiHref = doiEl.getAttribute('href') || doiEl.getAttribute('content') || doiEl.textContent || '';
-    const match = doiHref.match(/10\.1145\/[^\s"',]+/);
+    const match = doiHref.match(/10\.\d{4,9}\/[-._;()/:A-Za-z0-9]+/);
     if (match) {
       paperDoi = match[0];
     }
@@ -60,11 +58,11 @@ function parseAcmArticleHtml(htmlOrDoc, currentUrl = '') {
   // 4. Cek apakah ada cover langsung di halaman artikel
   let coverUrl = '';
   const coverImg = doc.querySelector(
-    '.overlay-cover-wrapper img, .left-side-image img, img[alt*="cover" i], img[src*=".cover." i]'
+    '.overlay-cover-wrapper img, .left-side-image img, img[alt*="cover" i], img[src*=".cover." i], img[data-src*=".cover." i]'
   );
   if (coverImg) {
     const src = coverImg.getAttribute('data-src') || coverImg.getAttribute('src') || coverImg.src || '';
-    if (src) {
+    if (src && !src.includes('badge') && !src.includes('logo')) {
       coverUrl = src.startsWith('http') ? src : ('https://dl.acm.org' + (src.startsWith('/') ? '' : '/') + src);
     }
   }
@@ -87,10 +85,10 @@ function parseAcmProceedingsHtml(htmlOrDoc, currentUrl = '') {
     doc = parser.parseFromString(htmlOrDoc, 'text/html');
   }
 
-  // 1. Judul Proceeding / Conference
+  // 1. Judul Proceeding / Conference / Journal
   let title = '';
   const titleEl = doc.querySelector(
-    '.colored-block__title h2, h2.left-bordered-title, .colored-block.item-meta h2, .item-meta h2, h1.left-bordered-title, h1, h2'
+    '.colored-block__title h2, h2.left-bordered-title, .colored-block.item-meta h2, .item-meta h2, h1.left-bordered-title, .publication-title, h1, h2'
   );
   if (titleEl) {
     title = titleEl.textContent.trim();
@@ -98,10 +96,11 @@ function parseAcmProceedingsHtml(htmlOrDoc, currentUrl = '') {
 
   // 2. Ekstrak Metadata dari .item-meta-row
   let conferenceName = '';
-  let publisher = 'Association for Computing Machinery';
-  let isbn = '';
+  let publisher = 'ACM';
+  let isbnOrIssn = '';
   let publishedDate = '';
   let year = '';
+  let editors = '';
 
   const metaRows = doc.querySelectorAll('.item-meta-row');
   metaRows.forEach(row => {
@@ -114,11 +113,31 @@ function parseAcmProceedingsHtml(htmlOrDoc, currentUrl = '') {
 
     if (labelText.includes('conference:')) {
       conferenceName = valText.replace(/\s+/g, ' ');
+    } else if (labelText.includes('editor:')) {
+      const editorLinks = row.querySelectorAll('.editors-info a, a');
+      if (editorLinks.length > 0) {
+        editors = Array.from(editorLinks).map(a => a.textContent.trim()).filter(Boolean).join(', ');
+      } else {
+        editors = valText.replace(/\s+/g, ' ');
+      }
     } else if (labelText.includes('publisher:')) {
-      publisher = valText.replace(/\s+/g, ' ') || publisher;
+      const pubLi = row.querySelector('.published-info ul li, .comma li, li');
+      if (pubLi) {
+        publisher = pubLi.textContent.trim();
+      } else if (valText) {
+        publisher = valText.split(/ISSN|ISBN/i)[0].trim() || publisher;
+      }
+
+      const issnMatch = valText.match(/ISSN:?\s*([\d-]+)/i);
+      if (issnMatch && !isbnOrIssn) {
+        isbnOrIssn = 'ISSN-' + issnMatch[1];
+      }
     } else if (labelText.includes('isbn:')) {
       const isbnMatch = valText.match(/[\d-]+/);
-      isbn = isbnMatch ? isbnMatch[0] : valText;
+      isbnOrIssn = isbnMatch ? `ISBN-${isbnMatch[0]}` : valText;
+    } else if (labelText.includes('issn:')) {
+      const issnMatch = valText.match(/[\d-]+/);
+      isbnOrIssn = isbnMatch ? `ISSN-${isbnMatch[0]}` : valText;
     } else if (labelText.includes('published:')) {
       publishedDate = valText;
       const yMatch = valText.match(/\b(19\d\d|20\d\d)\b/);
@@ -128,6 +147,11 @@ function parseAcmProceedingsHtml(htmlOrDoc, currentUrl = '') {
     }
   });
 
+  // Ekstrak tahun dari URL jika /toc/.../2025/...
+  if (!year) {
+    const urlYearMatch = currentUrl.match(/\/(\d{4})\//);
+    if (urlYearMatch) year = urlYearMatch[1];
+  }
   if (!year && conferenceName) {
     const yMatch = conferenceName.match(/\b(19\d\d|20\d\d)\b/);
     if (yMatch) year = yMatch[1];
@@ -155,10 +179,10 @@ function parseAcmProceedingsHtml(htmlOrDoc, currentUrl = '') {
     }
   }
 
-  // 4. Ekstrak Front Matter PDF (jika tidak ada cover image atau sebagai cadangan)
+  // 4. Ekstrak Front Matter PDF / Issue PDF jika cover image tidak tersedia
   let coverPdfUrl = '';
   const fmPdfLink = doc.querySelector(
-    'a[href*="/action/showFmPdf"], a[title*="Front matter" i], a[href*="showFmPdf"]'
+    'a[href*="/action/showFmPdf"], a[title*="Front matter" i], a[href*="showFmPdf"], a[href*="/doi/pdf/"]'
   );
   if (fmPdfLink) {
     const href = fmPdfLink.getAttribute('href') || '';
@@ -167,22 +191,23 @@ function parseAcmProceedingsHtml(htmlOrDoc, currentUrl = '') {
 
   // 5. DOI Proceeding dari URL atau halaman
   let doi = '';
-  const urlDoiMatch = currentUrl.match(/10\.1145\/(\d+)/);
+  const urlDoiMatch = currentUrl.match(/10\.\d{4,9}\/[-._;()/:A-Za-z0-9]+/);
   if (urlDoiMatch) {
-    doi = `10.1145/${urlDoiMatch[1]}`;
+    doi = urlDoiMatch[0];
   }
 
   const isPdfCover = !coverUrl && !!coverPdfUrl;
 
   return {
     success: !!(title || coverUrl || coverPdfUrl),
-    title: title || conferenceName || 'ACM Conference Proceeding',
+    title: title || conferenceName || 'ACM Publication',
     subtitle: conferenceName || title,
     publisher: publisher || 'ACM',
-    series: 'ACM Conference Proceedings',
-    isbn: isbn ? (isbn.toUpperCase().startsWith('ISBN') ? isbn : `ISBN-${isbn}`) : (doi ? `ACM-${doi}` : ''),
+    series: conferenceName ? 'ACM Conference Proceedings' : 'ACM Publications',
+    isbn: isbnOrIssn || (doi ? `ACM-${doi}` : ''),
     doi: doi,
     year: year,
+    editors: editors || 'ACM',
     coverUrl: coverUrl,
     coverPdfUrl: coverPdfUrl,
     isPdfCover: isPdfCover

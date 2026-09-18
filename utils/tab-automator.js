@@ -130,7 +130,94 @@ class TabAutomator {
   }
 
   /**
-   * Eksekusi satu rantai alur kerja (Scopus -> Springer / IEEE Xplore / ScienceDirect)
+   * Menunggu penyelesaian verifikasi robot (Cloudflare Turnstile, CAPTCHA, dsb.)
+   * Jika terdeteksi:
+   * 1. Mengaktifkan tab target agar pengguna dapat melihat tantangan di browser.
+   * 2. Memberikan pesan status di UI ekstensi.
+   * 3. Menunggu (polling) hingga tantangan diselesaikan oleh pengguna (maksimal timeout).
+   * 4. Memberikan jeda settling setelah verifikasi lolos agar DOM asli selesai dirender.
+   */
+  async waitForRobotVerification(tabId, onStatus, maxWaitMs = 180000) {
+    const startTime = Date.now();
+    let challengeDetected = false;
+
+    while (Date.now() - startTime < maxWaitMs) {
+      if (this.isCancelled) throw new Error('Dibatalkan');
+      if (this.isSkipped) throw new Error('Dilewati oleh pengguna');
+
+      const tab = await this.getTab(tabId);
+      if (!tab) throw new Error('Tab telah ditutup.');
+
+      let statusInfo = null;
+      try {
+        statusInfo = await this.executeInTab(tabId, () => {
+          const title = (document.title || '').trim();
+          const bodyText = document.body ? (document.body.innerText || '') : '';
+
+          const isCfTitle = title.includes('Just a moment') ||
+                            title.includes('Attention Required') ||
+                            title.includes('Security Check') ||
+                            title.includes('Cloudflare') ||
+                            title.includes('Verify') ||
+                            title.includes('Verifikasi');
+
+          const cfElement = document.querySelector(
+            '#challenge-stage, #challenge-running, #challenge-form, .cf-turnstile, #cf-wrapper, #cf-stage, ' +
+            'iframe[src*="challenges.cloudflare.com"], iframe[src*="cloudflare"], iframe[title*="Cloudflare"], ' +
+            'iframe[title*="Widget containing a Cloudflare security challenge"], #turnstile-wrapper, form#challenge-form, .ray-id, div.cf-alert'
+          );
+
+          const isCfText = bodyText.includes('Verifying you are human') ||
+                           bodyText.includes('Verify you are human') ||
+                           bodyText.includes('Checking if the site connection is secure') ||
+                           bodyText.includes('review the security of your connection') ||
+                           bodyText.includes('Please enable JavaScript and cookies') ||
+                           bodyText.includes('Human Verification');
+
+          const hasRealContent = !!document.querySelector(
+            '.core-self-citation, .colored-block, .item-meta, #skip-to-main-content, ' +
+            '.c-breadcrumbs, .publication-details, xpl-issue-results-items, h1.citation__title, ' +
+            'a[href*="/doi/proceedings/"], a[href*="/action/showFmPdf"], .toc.acmotherconferences'
+          );
+
+          return {
+            isChallenge: (isCfTitle || !!cfElement || isCfText) && !hasRealContent,
+            title: title
+          };
+        });
+      } catch (e) {
+        // Tab mungkin sedang reload atau navigasi otomatis setelah challenge berhasil diselesaikan
+        await this.sleep(1000);
+        continue;
+      }
+
+      if (statusInfo && statusInfo.isChallenge) {
+        if (!challengeDetected) {
+          challengeDetected = true;
+          try {
+            await chrome.tabs.update(tabId, { active: true });
+          } catch (e) {}
+          onStatus('⏳ Terdeteksi verifikasi robot (CAPTCHA/Cloudflare). Silakan selesaikan verifikasi di tab browser...');
+        }
+        await this.sleep(1500);
+      } else {
+        // Jika sebelumnya terdeteksi challenge, tapi sekarang sudah lewat
+        if (challengeDetected) {
+          onStatus('✅ Verifikasi robot selesai! Melanjutkan proses...');
+          await this.sleep(2000);
+        }
+        return true;
+      }
+    }
+
+    if (challengeDetected) {
+      throw new Error('Waktu tunggu verifikasi robot habis (melebihi 3 menit). Silakan coba lagi.');
+    }
+    return false;
+  }
+
+  /**
+   * Eksekusi satu rantai alur kerja (Scopus -> Springer / IEEE Xplore / ScienceDirect / ACM)
    */
   async processUrl(initialUrl, {
     activeTab = true,
@@ -280,6 +367,9 @@ class TabAutomator {
         await this.updateTabUrl(tabId, publisherUrl, activeTab);
         await this.waitForTabLoad(tabId, timeoutMs);
         await this.sleep(1500);
+
+        // Cek jika muncul tantangan verifikasi robot (Cloudflare/CAPTCHA) saat masuk ke publisher
+        await this.waitForRobotVerification(tabId, onStatus);
 
         currentTab = await this.getTab(tabId);
         currentUrl = (currentTab && currentTab.url) ? currentTab.url : publisherUrl;
@@ -791,52 +881,264 @@ class TabAutomator {
       // TAHAP 2C: Jika Publisher adalah ACM DIGITAL LIBRARY
       // ========================================================
       if (currentUrl.includes('dl.acm.org') || currentUrl.includes('acm.org')) {
-        // 1. Jika sedang di halaman Article / Paper ACM (/doi/10.1145/... dan BUKAN /doi/proceedings/)
-        if (currentUrl.includes('/doi/') && !currentUrl.includes('/doi/proceedings/')) {
-          onStatus('Halaman Paper ACM: Mencari link Conference Proceedings...');
+        // Cek jika muncul tantangan verifikasi robot (Cloudflare Turnstile)
+        await this.waitForRobotVerification(tabId, onStatus);
 
-          const acmArticleData = await this.executeInTab(tabId, () => {
+        currentTab = await this.getTab(tabId);
+        currentUrl = (currentTab && currentTab.url) ? currentTab.url : currentUrl;
+
+        // 1. Jika sedang di halaman Article / Paper ACM (bukan halaman prosiding atau daftar isi jurnal /toc/)
+        const isAcmArticle = (currentUrl.includes('/doi/') || currentUrl.includes('/doi/abs/')) &&
+                             !currentUrl.includes('/doi/proceedings/') &&
+                             !currentUrl.includes('/toc/');
+
+        if (isAcmArticle) {
+          onStatus('Halaman Paper ACM: Mencari link Prosiding/Jurnal induk...');
+
+          const getArticleData = async () => {
+            return await this.executeInTab(tabId, () => {
+              return new Promise((resolve) => {
+                const MAX_WAIT = 10000;
+                const INTERVAL = 300;
+                let elapsed = 0;
+
+                const poll = () => {
+                  const citationParentLink = document.querySelector(
+                    '.core-self-citation .core-enumeration a[href*="/toc/"], ' +
+                    '.core-self-citation [property="isPartOf"] a[href*="/doi/proceedings/"], ' +
+                    '.core-self-citation [property="isPartOf"] a[href*="/toc/"], ' +
+                    '.core-self-citation a[href*="/doi/proceedings/"], ' +
+                    '.core-self-citation a[href*="/toc/"], ' +
+                    '.core-enumeration a[href*="/toc/"], ' +
+                    'a[href*="/doi/proceedings/"], a[href*="/toc/"]'
+                  );
+
+                  const titleEl = document.querySelector(
+                    'h1.citation__title, .citation__title, h1.left-bordered-title, .core-self-citation [property="name"], h1'
+                  );
+                  const paperTitle = titleEl ? titleEl.textContent.trim() : '';
+
+                  if (citationParentLink && citationParentLink.href) {
+                    resolve({
+                      success: true,
+                      proceedingUrl: citationParentLink.href,
+                      paperTitle: paperTitle
+                    });
+                    return;
+                  }
+
+                  elapsed += INTERVAL;
+                  if (elapsed >= MAX_WAIT) {
+                    // Cek apakah tertahan tantangan Cloudflare / robot
+                    const title = (document.title || '').trim();
+                    const isCf = title.includes('Just a moment') ||
+                                 title.includes('Attention Required') ||
+                                 title.includes('Cloudflare') ||
+                                 title.includes('Security Check') ||
+                                 !!document.querySelector('#challenge-stage, #challenge-running, .cf-turnstile, iframe[src*="cloudflare"]');
+                    if (isCf) {
+                      resolve({ success: false, isChallenge: true });
+                      return;
+                    }
+
+                    // Fallback: cek link proceeding atau toc apapun di halaman
+                    const anyProcOrToc = Array.from(document.querySelectorAll('a')).find(a =>
+                      a.href && (a.href.includes('/doi/proceedings/') || a.href.includes('/toc/'))
+                    );
+                    if (anyProcOrToc) {
+                      resolve({
+                        success: true,
+                        proceedingUrl: anyProcOrToc.href,
+                        paperTitle: paperTitle
+                      });
+                      return;
+                    }
+
+                    resolve({
+                      success: false,
+                      error: 'Tidak dapat menemukan link Prosiding atau Jurnal di halaman ACM ini.'
+                    });
+                    return;
+                  }
+
+                  setTimeout(poll, INTERVAL);
+                };
+
+                poll();
+              });
+            });
+          };
+
+          let acmArticleData = await getArticleData();
+          if (acmArticleData && acmArticleData.isChallenge) {
+            await this.waitForRobotVerification(tabId, onStatus);
+            acmArticleData = await getArticleData();
+          }
+
+          if (!acmArticleData || !acmArticleData.success) {
+            throw new Error(acmArticleData ? acmArticleData.error : 'Gagal menemukan link Prosiding/Jurnal ACM.');
+          }
+
+          if (!paperOrChapterTitle && acmArticleData.paperTitle) {
+            paperOrChapterTitle = acmArticleData.paperTitle;
+          }
+
+          const proceedingUrl = acmArticleData.proceedingUrl;
+          onStatus(`Membuka Publikasi Induk ACM: ${proceedingUrl}...`);
+
+          await this.updateTabUrl(tabId, proceedingUrl, activeTab);
+          await this.waitForTabLoad(tabId, timeoutMs);
+          await this.sleep(1800);
+
+          // Cek verifikasi robot saat membuka halaman publikasi induk
+          await this.waitForRobotVerification(tabId, onStatus);
+
+          currentTab = await this.getTab(tabId);
+          currentUrl = (currentTab && currentTab.url) ? currentTab.url : proceedingUrl;
+        }
+
+        // 2. Sekarang berada di halaman Prosiding (/doi/proceedings/...) atau Jurnal TOC (/toc/...) ACM
+        await this.waitForRobotVerification(tabId, onStatus);
+        onStatus('Halaman Publikasi ACM: Mengekstrak metadata & cover...');
+
+        const getProcData = async () => {
+          return await this.executeInTab(tabId, () => {
             return new Promise((resolve) => {
-              const MAX_WAIT = 10000;
+              const MAX_WAIT = 12000;
               const INTERVAL = 300;
               let elapsed = 0;
 
               const poll = () => {
-                const citationBookLink = document.querySelector(
-                  '.core-self-citation [property="isPartOf"] a[href*="/doi/proceedings/"], .core-self-citation a[href*="/doi/proceedings/"], a[href*="/doi/proceedings/"]'
-                );
-
                 const titleEl = document.querySelector(
-                  'h1.citation__title, .citation__title, h1.left-bordered-title, .core-self-citation [property="name"], h1'
+                  '.colored-block__title h2, h2.left-bordered-title, .colored-block.item-meta h2, .item-meta h2, h1.left-bordered-title, .publication-title, h1, h2'
                 );
-                const paperTitle = titleEl ? titleEl.textContent.trim() : '';
+                const coverImg = document.querySelector(
+                  '.overlay-cover-wrapper img, .left-side-image img, img.image-lazy-loaded, img[alt*="cover" i], img[src*=".cover." i], img[data-src*=".cover." i]'
+                );
+                const fmPdfLink = document.querySelector(
+                  'a[href*="/action/showFmPdf"], a[title*="Front matter" i], a[href*="showFmPdf"], a[href*="/doi/pdf/"]'
+                );
 
-                if (citationBookLink && citationBookLink.href) {
+                if (titleEl || coverImg || fmPdfLink) {
+                  const title = titleEl ? titleEl.textContent.trim() : '';
+
+                  let conferenceName = '';
+                  let publisher = 'ACM';
+                  let isbnOrIssn = '';
+                  let year = '';
+                  let editors = '';
+
+                  const metaRows = document.querySelectorAll('.item-meta-row');
+                  metaRows.forEach(row => {
+                    const labelEl = row.querySelector('.item-meta-row__label');
+                    const valEl = row.querySelector('.item-meta-row__value');
+                    if (!labelEl) return;
+
+                    const labelText = (labelEl.innerText || labelEl.textContent || '').trim().toLowerCase();
+                    const valText = valEl ? (valEl.innerText || valEl.textContent || '').trim() : '';
+
+                    if (labelText.includes('conference:')) {
+                      conferenceName = valText.replace(/\s+/g, ' ');
+                    } else if (labelText.includes('editor:')) {
+                      const editorLinks = row.querySelectorAll('.editors-info a, a');
+                      if (editorLinks.length > 0) {
+                        editors = Array.from(editorLinks).map(a => a.textContent.trim()).filter(Boolean).join(', ');
+                      } else {
+                        editors = valText.replace(/\s+/g, ' ');
+                      }
+                    } else if (labelText.includes('publisher:')) {
+                      const pubLi = row.querySelector('.published-info ul li, .comma li, li');
+                      if (pubLi) {
+                        publisher = pubLi.textContent.trim();
+                      } else if (valText) {
+                        publisher = valText.split(/ISSN|ISBN/i)[0].trim() || publisher;
+                      }
+
+                      const issnMatch = valText.match(/ISSN:?\s*([\d-]+)/i);
+                      if (issnMatch && !isbnOrIssn) {
+                        isbnOrIssn = 'ISSN-' + issnMatch[1];
+                      }
+                    } else if (labelText.includes('isbn:')) {
+                      const isbnMatch = valText.match(/[\d-]+/);
+                      isbnOrIssn = isbnMatch ? `ISBN-${isbnMatch[0]}` : valText;
+                    } else if (labelText.includes('issn:')) {
+                      const issnMatch = valText.match(/[\d-]+/);
+                      isbnOrIssn = isbnMatch ? `ISSN-${isbnMatch[0]}` : valText;
+                    } else if (labelText.includes('published:')) {
+                      const yMatch = valText.match(/\b(19\d\d|20\d\d)\b/);
+                      if (yMatch) year = yMatch[1];
+                    }
+                  });
+
+                  if (!year) {
+                    const urlYearMatch = window.location.href.match(/\/(\d{4})\//);
+                    if (urlYearMatch) year = urlYearMatch[1];
+                  }
+                  if (!year && conferenceName) {
+                    const yMatch = conferenceName.match(/\b(19\d\d|20\d\d)\b/);
+                    if (yMatch) year = yMatch[1];
+                  }
+                  if (!year && title) {
+                    const yMatch = title.match(/\b(19\d\d|20\d\d)\b/) || title.match(/'(\d{2})\b/);
+                    if (yMatch) {
+                      year = yMatch[1].length === 2 ? ('20' + yMatch[1]) : yMatch[1];
+                    }
+                  }
+                  if (!year) {
+                    const pageYearMatch = (document.body ? document.body.textContent : '').match(/Copyright\s*©\s*(\d{4})|(\d{4})\s*ACM/i);
+                    if (pageYearMatch) year = pageYearMatch[1] || pageYearMatch[2];
+                  }
+
+                  let coverUrl = '';
+                  if (coverImg) {
+                    const src = coverImg.getAttribute('data-src') || coverImg.getAttribute('src') || coverImg.src || '';
+                    if (src && !src.includes('badge') && !src.includes('logo')) {
+                      coverUrl = src.startsWith('http') ? src : ('https://dl.acm.org' + (src.startsWith('/') ? '' : '/') + src);
+                    }
+                  }
+
+                  let coverPdfUrl = '';
+                  if (fmPdfLink) {
+                    const href = fmPdfLink.getAttribute('href') || '';
+                    coverPdfUrl = href.startsWith('http') ? href : ('https://dl.acm.org' + (href.startsWith('/') ? '' : '/') + href);
+                  }
+
+                  let doi = '';
+                  const urlDoiMatch = window.location.href.match(/10\.\d{4,9}\/[-._;()/:A-Za-z0-9]+/);
+                  if (urlDoiMatch) {
+                    doi = urlDoiMatch[0];
+                  }
+
                   resolve({
                     success: true,
-                    proceedingUrl: citationBookLink.href,
-                    paperTitle: paperTitle
+                    title: title || conferenceName || 'ACM Publication',
+                    subtitle: conferenceName || title,
+                    publisher: publisher || 'ACM',
+                    isbn: isbnOrIssn || (doi ? `ACM-${doi}` : ''),
+                    doi: doi,
+                    year: year,
+                    editors: editors || 'ACM',
+                    coverUrl: coverUrl,
+                    coverPdfUrl: coverPdfUrl
                   });
                   return;
                 }
 
                 elapsed += INTERVAL;
                 if (elapsed >= MAX_WAIT) {
-                  // Fallback: cek link proceeding apapun
-                  const anyProc = Array.from(document.querySelectorAll('a')).find(a => a.href && a.href.includes('/doi/proceedings/'));
-                  if (anyProc) {
-                    resolve({
-                      success: true,
-                      proceedingUrl: anyProc.href,
-                      paperTitle: paperTitle
-                    });
+                  // Cek apakah tertahan tantangan Cloudflare / robot
+                  const title = (document.title || '').trim();
+                  const isCf = title.includes('Just a moment') ||
+                               title.includes('Attention Required') ||
+                               title.includes('Cloudflare') ||
+                               title.includes('Security Check') ||
+                               !!document.querySelector('#challenge-stage, #challenge-running, .cf-turnstile, iframe[src*="cloudflare"]');
+                  if (isCf) {
+                    resolve({ success: false, isChallenge: true });
                     return;
                   }
 
-                  resolve({
-                    success: false,
-                    error: 'Tidak dapat menemukan link Conference Proceedings di halaman ACM ini.'
-                  });
+                  resolve({ success: false, error: 'Waktu tunggu halaman prosiding/jurnal ACM habis.' });
                   return;
                 }
 
@@ -846,143 +1148,19 @@ class TabAutomator {
               poll();
             });
           });
+        };
 
-          if (!acmArticleData || !acmArticleData.success) {
-            throw new Error(acmArticleData ? acmArticleData.error : 'Gagal menemukan link Proceedings ACM.');
-          }
-
-          if (!paperOrChapterTitle && acmArticleData.paperTitle) {
-            paperOrChapterTitle = acmArticleData.paperTitle;
-          }
-
-          const proceedingUrl = acmArticleData.proceedingUrl;
-          onStatus(`Membuka Conference Proceedings ACM: ${proceedingUrl}...`);
-
-          await this.updateTabUrl(tabId, proceedingUrl, activeTab);
-          await this.waitForTabLoad(tabId, timeoutMs);
-          await this.sleep(1800);
-
-          currentTab = await this.getTab(tabId);
-          currentUrl = (currentTab && currentTab.url) ? currentTab.url : proceedingUrl;
+        let acmProcData = await getProcData();
+        if (acmProcData && acmProcData.isChallenge) {
+          await this.waitForRobotVerification(tabId, onStatus);
+          acmProcData = await getProcData();
         }
-
-        // 2. Sekarang berada di halaman Conference Proceedings ACM (/doi/proceedings/...)
-        onStatus('Halaman Proceeding ACM: Mengekstrak metadata & cover...');
-
-        const acmProcData = await this.executeInTab(tabId, () => {
-          return new Promise((resolve) => {
-            const MAX_WAIT = 12000;
-            const INTERVAL = 300;
-            let elapsed = 0;
-
-            const poll = () => {
-              const titleEl = document.querySelector(
-                '.colored-block__title h2, h2.left-bordered-title, .colored-block.item-meta h2, .item-meta h2, h1.left-bordered-title, h1, h2'
-              );
-              const coverImg = document.querySelector(
-                '.overlay-cover-wrapper img, .left-side-image img, img.image-lazy-loaded, img[alt*="cover" i], img[src*=".cover." i], img[data-src*=".cover." i]'
-              );
-              const fmPdfLink = document.querySelector(
-                'a[href*="/action/showFmPdf"], a[title*="Front matter" i], a[href*="showFmPdf"]'
-              );
-
-              if (titleEl || coverImg || fmPdfLink) {
-                const title = titleEl ? titleEl.textContent.trim() : '';
-
-                let conferenceName = '';
-                let publisher = 'Association for Computing Machinery';
-                let isbn = '';
-                let year = '';
-
-                const metaRows = document.querySelectorAll('.item-meta-row');
-                metaRows.forEach(row => {
-                  const labelEl = row.querySelector('.item-meta-row__label');
-                  const valEl = row.querySelector('.item-meta-row__value');
-                  if (!labelEl) return;
-
-                  const labelText = (labelEl.innerText || labelEl.textContent || '').trim().toLowerCase();
-                  const valText = valEl ? (valEl.innerText || valEl.textContent || '').trim() : '';
-
-                  if (labelText.includes('conference:')) {
-                    conferenceName = valText.replace(/\s+/g, ' ');
-                  } else if (labelText.includes('publisher:')) {
-                    publisher = valText.replace(/\s+/g, ' ') || publisher;
-                  } else if (labelText.includes('isbn:')) {
-                    const isbnMatch = valText.match(/[\d-]+/);
-                    isbn = isbnMatch ? isbnMatch[0] : valText;
-                  } else if (labelText.includes('published:')) {
-                    const yMatch = valText.match(/\b(19\d\d|20\d\d)\b/);
-                    if (yMatch) year = yMatch[1];
-                  }
-                });
-
-                if (!year && conferenceName) {
-                  const yMatch = conferenceName.match(/\b(19\d\d|20\d\d)\b/);
-                  if (yMatch) year = yMatch[1];
-                }
-                if (!year && title) {
-                  const yMatch = title.match(/\b(19\d\d|20\d\d)\b/) || title.match(/'(\d{2})\b/);
-                  if (yMatch) {
-                    year = yMatch[1].length === 2 ? ('20' + yMatch[1]) : yMatch[1];
-                  }
-                }
-                if (!year) {
-                  const pageYearMatch = (document.body ? document.body.textContent : '').match(/Copyright\s*©\s*(\d{4})|(\d{4})\s*ACM/i);
-                  if (pageYearMatch) year = pageYearMatch[1] || pageYearMatch[2];
-                }
-
-                let coverUrl = '';
-                if (coverImg) {
-                  const src = coverImg.getAttribute('data-src') || coverImg.getAttribute('src') || coverImg.src || '';
-                  if (src && !src.includes('badge') && !src.includes('logo')) {
-                    coverUrl = src.startsWith('http') ? src : ('https://dl.acm.org' + (src.startsWith('/') ? '' : '/') + src);
-                  }
-                }
-
-                let coverPdfUrl = '';
-                if (fmPdfLink) {
-                  const href = fmPdfLink.getAttribute('href') || '';
-                  coverPdfUrl = href.startsWith('http') ? href : ('https://dl.acm.org' + (href.startsWith('/') ? '' : '/') + href);
-                }
-
-                let doi = '';
-                const urlDoiMatch = window.location.href.match(/10\.1145\/(\d+)/);
-                if (urlDoiMatch) {
-                  doi = `10.1145/${urlDoiMatch[1]}`;
-                }
-
-                resolve({
-                  success: true,
-                  title: title || conferenceName || 'ACM Conference Proceeding',
-                  subtitle: conferenceName || title,
-                  publisher: publisher || 'ACM',
-                  isbn: isbn ? (isbn.toUpperCase().startsWith('ISBN') ? isbn : `ISBN-${isbn}`) : (doi ? `ACM-${doi}` : ''),
-                  doi: doi,
-                  year: year,
-                  coverUrl: coverUrl,
-                  coverPdfUrl: coverPdfUrl
-                });
-                return;
-              }
-
-              elapsed += INTERVAL;
-              if (elapsed >= MAX_WAIT) {
-                resolve({ success: false, error: 'Waktu tunggu halaman proceeding ACM habis.' });
-                return;
-              }
-
-              setTimeout(poll, INTERVAL);
-            };
-
-            poll();
-          });
-        });
 
         if (!acmProcData || !acmProcData.success) {
-          throw new Error(acmProcData ? acmProcData.error : 'Gagal membaca metadata proceeding ACM.');
+          throw new Error(acmProcData ? acmProcData.error : 'Gagal membaca metadata prosiding/jurnal ACM.');
         }
 
-        onStatus(`Ditemukan Proceeding ACM: ${acmProcData.title}. Menyiapkan unduhan...`);
+        onStatus(`Ditemukan Publikasi ACM: ${acmProcData.title}. Menyiapkan unduhan...`);
 
         const isPdfCover = !acmProcData.coverUrl && !!acmProcData.coverPdfUrl;
 
@@ -997,9 +1175,9 @@ class TabAutomator {
           isbn: acmProcData.isbn,
           doi: acmProcData.doi,
           year: acmProcData.year,
-          editors: 'ACM',
-          series: 'ACM Conference Proceedings',
-          publisher: 'ACM',
+          editors: acmProcData.editors || 'ACM',
+          series: acmProcData.subtitle || 'ACM Publications',
+          publisher: acmProcData.publisher || 'ACM',
           scopusUrl: scopusUrl,
           bookUrl: currentUrl,
           sourceUrl: currentUrl,

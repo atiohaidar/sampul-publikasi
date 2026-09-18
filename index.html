@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pengunduh Sampul Publikasi - Panduan & Instalasi</title>
+  <link rel="icon" type="image/png" href="icons/icon48.png">
+  <style>
+    :root {
+      --primary: #025E8D;
+      --primary-hover: #01466a;
+      --accent: #0070A8;
+      --bg-page: #f8fafc;
+      --surface: #ffffff;
+      --border: #e2e8f0;
+      --border-subtle: #cbd5e1;
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --warning-bg: #fffbeb;
+      --warning-border: #fef08a;
+      --warning-text: #92400e;
+      --info-bg: #f0f9ff;
+      --info-border: #bae6fd;
+      --info-text: #0369a1;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      background-color: var(--bg-page);
+      color: var(--text-main);
+      line-height: 1.6;
+      font-size: 15px;
+      padding: 40px 20px 80px;
+    }
+
+    .container {
+      max-width: 820px;
+      margin: 0 auto;
+      display: flex;
+      flex-direction: column;
+      gap: 28px;
+    }
+
+    /* Header */
+    header {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 32px 36px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .brand-row {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .brand-icon {
+      width: 44px;
+      height: 44px;
+      background: #e0f2fe;
+      color: var(--primary);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 800;
+      font-size: 20px;
+      flex-shrink: 0;
+    }
+
+    h1 {
+      font-size: 24px;
+      font-weight: 700;
+      color: var(--text-main);
+      line-height: 1.3;
+    }
+
+    .tagline {
+      font-size: 15px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+
+    .btn-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 8px;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 10px 20px;
+      font-size: 14px;
+      font-weight: 600;
+      border-radius: 8px;
+      text-decoration: none;
+      cursor: pointer;
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: #ffffff;
+      border: 1px solid var(--primary);
+    }
+
+    .btn-primary:hover {
+      background: var(--primary-hover);
+      border-color: var(--primary-hover);
+    }
+
+    .btn-secondary {
+      background: var(--surface);
+      color: var(--text-main);
+      border: 1px solid var(--border-subtle);
+    }
+
+    .btn-secondary:hover {
+      background: #f1f5f9;
+      border-color: #94a3b8;
+    }
+
+    /* Section Cards */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 28px 32px;
+    }
+
+    .card-title {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 16px;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    /* Important Notes / Callout */
+    .callout {
+      background: var(--warning-bg);
+      border: 1px solid var(--warning-border);
+      border-radius: 10px;
+      padding: 20px 24px;
+      margin-bottom: 24px;
+    }
+
+    .callout-header {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--warning-text);
+      margin-bottom: 12px;
+    }
+
+    .note-list {
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .note-list li {
+      font-size: 14px;
+      color: #78350f;
+      line-height: 1.55;
+      padding-left: 20px;
+      position: relative;
+    }
+
+    .note-list li::before {
+      content: "•";
+      position: absolute;
+      left: 6px;
+      font-weight: bold;
+      color: var(--warning-text);
+    }
+
+    .note-list strong {
+      color: #451a03;
+    }
+
+    /* Steps */
+    .steps-list {
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+    }
+
+    .step-item {
+      display: flex;
+      gap: 16px;
+      align-items: flex-start;
+    }
+
+    .step-num {
+      width: 32px;
+      height: 32px;
+      background: #e2e8f0;
+      color: var(--primary);
+      border-radius: 50%;
+      font-weight: 700;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .step-content h3 {
+      font-size: 15px;
+      font-weight: 600;
+      margin-bottom: 4px;
+      color: var(--text-main);
+    }
+
+    .step-content p {
+      font-size: 14px;
+      color: var(--text-muted);
+      line-height: 1.5;
+    }
+
+    .step-content code {
+      background: #f1f5f9;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 2px 6px;
+      font-size: 13px;
+      color: #0369a1;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    /* Table format sample */
+    .table-sample {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 14px 0;
+      font-size: 13px;
+    }
+
+    .table-sample th,
+    .table-sample td {
+      border: 1px solid var(--border);
+      padding: 8px 12px;
+      text-align: left;
+    }
+
+    .table-sample th {
+      background: #f8fafc;
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    .table-sample td {
+      background: #ffffff;
+      color: var(--text-muted);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+    }
+
+    .table-sample td.id-col {
+      font-weight: 600;
+      color: var(--text-main);
+    }
+
+    /* Footer */
+    footer {
+      text-align: center;
+      font-size: 13px;
+      color: var(--text-muted);
+      padding-top: 12px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+
+    <!-- Header Section -->
+    <header>
+      <div class="brand-row">
+        <div class="brand-icon">SP</div>
+        <div>
+          <h1>Pengunduh Sampul Publikasi Ilmiah</h1>
+          <p class="tagline">Ekstensi Google Chrome untuk mempermudah unduh cover prosiding dan buku dari tautan publikasi atau Scopus secara otomatis.</p>
+        </div>
+      </div>
+
+      <div class="btn-group">
+        <a href="https://github.com/atiohaidar/sampul-publikasi/archive/refs/heads/master.zip" class="btn btn-primary" download>
+          Unduh Ekstensi (.ZIP)
+        </a>
+        <a href="https://github.com/atiohaidar/sampul-publikasi" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">
+          Repositori GitHub
+        </a>
+      </div>
+    </header>
+
+    <!-- Catatan Penting -->
+    <div class="callout">
+      <div class="callout-header">Catatan Penting Mengenai Hasil Unduhan & Keterbatasan</div>
+      <ul class="note-list">
+        <li>
+          <strong>Jika hanya file <code>.pdf</code> yang terunduh:</strong> Ekstensi berhasil mengunduh file dokumen cover asli dari penerbit, namun proses render/konversi menjadi file gambar (<code>.jpg</code>) memerlukan waktu lebih lama atau mengalami timeout di peramban. File PDF tersebut tetap sah, valid, dan dapat Anda gunakan langsung atau dikonversi secara terpisah.
+        </li>
+        <li>
+          <strong>Jika hanya file <code>.htm</code> / <code>.html</code> yang terunduh:</strong> Berkas dokumen tidak dapat diakses langsung oleh ekstensi. Hal ini biasanya menandakan bahwa artikel memerlukan akses jaringan kampus (seperti VPN, EzProxy, atau login SSO institusi), atau dokumen berada di balik batas akses berbayar (paywall).
+        </li>
+        <li>
+          <strong>Proses gagal pada publisher tertentu:</strong> Struktur halaman tiap penerbit ilmiah sangat beragam dan dapat berubah sewaktu-waktu. Belum semua penerbit atau jenis dokumen dapat diproses secara otomatis oleh alat ini. Jika suatu tautan gagal, cover dapat diunduh manual dari situs terkait.
+        </li>
+        <li>
+          <strong>Tantangan verifikasi robot (Cloudflare / CAPTCHA):</strong> Jika situs penerbit (seperti ACM Digital Library) menampilkan verifikasi <em>"Verify you are human"</em>, tab peramban akan otomatis difokuskan. Silakan selesaikan centang verifikasi di tab tersebut; proses akan otomatis berlanjut setelah verifikasi selesai.
+        </li>
+      </ul>
+    </div>
+
+    <!-- Panduan Instalasi -->
+    <section class="card">
+      <h2 class="card-title">Panduan Instalasi di Google Chrome</h2>
+      <div class="steps-list">
+        <div class="step-item">
+          <div class="step-num">1</div>
+          <div class="step-content">
+            <h3>Unduh & Ekstrak Berkas</h3>
+            <p>Klik tombol <strong>"Unduh Ekstensi (.ZIP)"</strong> di atas. Setelah berkas ZIP terunduh, ekstrak (unzip) ke salah satu folder di komputer Anda (misalnya di folder <code>Documents</code> atau folder kerja Anda).</p>
+          </div>
+        </div>
+
+        <div class="step-item">
+          <div class="step-num">2</div>
+          <div class="step-content">
+            <h3>Buka Halaman Ekstensi Chrome</h3>
+            <p>Buka peramban Google Chrome, ketik <code>chrome://extensions/</code> pada bilah alamat (address bar), lalu tekan <strong>Enter</strong>.</p>
+          </div>
+        </div>
+
+        <div class="step-item">
+          <div class="step-num">3</div>
+          <div class="step-content">
+            <h3>Aktifkan Developer Mode</h3>
+            <p>Di sudut kanan atas halaman ekstensi Chrome, aktifkan sakelar <strong>"Developer mode"</strong> (Mode Pengembang).</p>
+          </div>
+        </div>
+
+        <div class="step-item">
+          <div class="step-num">4</div>
+          <div class="step-content">
+            <h3>Muat Ekstensi (Load Unpacked)</h3>
+            <p>Klik tombol <strong>"Load unpacked"</strong> (Muat yang belum dibongkar) yang muncul di sudut kiri atas halaman.</p>
+          </div>
+        </div>
+
+        <div class="step-item">
+          <div class="step-num">5</div>
+          <div class="step-content">
+            <h3>Pilih Folder Ekstensi</h3>
+            <p>Pilih folder hasil ekstrak tadi (folder yang di dalamnya berisi berkas <code>manifest.json</code>). Ekstensi akan terpasang dan siap digunakan.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Panduan Penggunaan -->
+    <section class="card">
+      <h2 class="card-title">Cara Penggunaan & Format Input</h2>
+      <div class="steps-list">
+        <div class="step-item">
+          <div class="step-num">1</div>
+          <div class="step-content">
+            <h3>Buka Dashboard Ekstensi</h3>
+            <p>Klik ikon ekstensi di pojok kanan atas Chrome, lalu pilih <strong>"Buka Dashboard Penuh"</strong> untuk membuka tampilan kerja yang leluasa.</p>
+          </div>
+        </div>
+
+        <div class="step-item">
+          <div class="step-num">2</div>
+          <div class="step-content">
+            <h3>Siapkan Data di Excel (2 Kolom: ID & Link)</h3>
+            <p>Siapkan daftar tautan Anda di Microsoft Excel atau Google Sheets dalam format 2 kolom sederhana:</p>
+            
+            <table class="table-sample">
+              <thead>
+                <tr>
+                  <th>Kolom A (ID)</th>
+                  <th>Kolom B (Link Scopus atau Publisher)</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="id-col">1</td>
+                  <td>https://www.scopus.com/record/display.uri?eid=...</td>
+                </tr>
+                <tr>
+                  <td class="id-col">2</td>
+                  <td>https://doi.org/10.1007/978-981-97-9097-5_15</td>
+                </tr>
+                <tr>
+                  <td class="id-col">3</td>
+                  <td>https://ieeexplore.ieee.org/document/10826978/</td>
+                </tr>
+                <tr>
+                  <td class="id-col">4</td>
+                  <td>https://doi.org/10.1145/3700706.3700723</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <p>Cukup salin (<em>Copy</em>) seluruh baris dan kolom tersebut dari Excel, lalu tempel (<em>Paste</em>) langsung ke kotak teks input di Dashboard.</p>
+          </div>
+        </div>
+
+        <div class="step-item">
+          <div class="step-num">3</div>
+          <div class="step-content">
+            <h3>Penamaan Berkas & Lokasi Unduhan</h3>
+            <p>Pilih pola penamaan berkas pada Dashboard (misalnya <strong>"Hanya ID"</strong>). Setiap berkas sampul yang berhasil diunduh akan otomatis dinamai sesuai nomor ID Anda (misalnya <code>1.jpg</code> atau <code>1.pdf</code>) dan tersimpan di folder bawaan peramban: <code>Downloads/book-covers/</code>.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <p>Pengunduh Sampul Publikasi Ilmiah &bull; Alat bantu administrasi referensi dan berkas publikasi.</p>
+    </footer>
+
+  </div>
+
+</body>
+</html>
