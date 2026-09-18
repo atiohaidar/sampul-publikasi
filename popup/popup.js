@@ -39,6 +39,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const statFailed = document.getElementById('statFailed');
   const btnExportCsv = document.getElementById('btnExportCsv');
 
+  const popupErrorNumbersBox = document.getElementById('popupErrorNumbersBox');
+  const btnPopupCopyErrorNums = document.getElementById('btnPopupCopyErrorNums');
+  const popupErrorNumberBadges = document.getElementById('popupErrorNumberBadges');
+
   let scraperEngine = new SpringerScraperEngine();
   let scrapedResults = [];
 
@@ -296,14 +300,35 @@ document.addEventListener('DOMContentLoaded', () => {
         if (btnSkipCurrent) btnSkipCurrent.classList.add('hidden');
         summarySection.classList.remove('hidden');
 
-        // Tampilkan tombol Retry jika ada yang gagal
-        if (summary.failedCount > 0 && btnRetryFailed) {
-          if (retryFailedText) {
-            retryFailedText.textContent = `Coba Lagi yang Gagal (${summary.failedCount} link)`;
+        // Tampilkan tombol Retry dan Nomor Error jika ada yang gagal
+        if (summary.failedCount > 0) {
+          const failedItems = scraperEngine.getFailedItems ? scraperEngine.getFailedItems() : [];
+          if (popupErrorNumbersBox) {
+            if (popupErrorNumberBadges) {
+              popupErrorNumberBadges.innerHTML = failedItems
+                .map(f => `<span style="background:#fee2e2;border:1px solid #fca5a5;padding:1px 6px;border-radius:4px;cursor:pointer;" title="Klik untuk salin">${f.id}</span>`)
+                .join(' ');
+              // Bind click to individual badge
+              popupErrorNumberBadges.querySelectorAll('span').forEach(sp => {
+                sp.addEventListener('click', () => {
+                  navigator.clipboard.writeText(sp.textContent);
+                  sp.style.background = '#d1fae5';
+                  setTimeout(() => { sp.style.background = '#fee2e2'; }, 1000);
+                });
+              });
+            }
+            popupErrorNumbersBox.classList.remove('hidden');
           }
-          btnRetryFailed.classList.remove('hidden');
-        } else if (btnRetryFailed) {
-          btnRetryFailed.classList.add('hidden');
+
+          if (btnRetryFailed) {
+            if (retryFailedText) {
+              retryFailedText.textContent = `Coba Lagi yang Gagal (${summary.failedCount} link)`;
+            }
+            btnRetryFailed.classList.remove('hidden');
+          }
+        } else {
+          if (popupErrorNumbersBox) popupErrorNumbersBox.classList.add('hidden');
+          if (btnRetryFailed) btnRetryFailed.classList.add('hidden');
         }
 
         progressBarFill.style.width = '100%';
@@ -362,6 +387,19 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     downloadCsv(scrapedResults, 'metadata_scopus_springer_ieee.csv');
   });
+
+  // Salin Nomor Gagal di Popup
+  if (btnPopupCopyErrorNums) {
+    btnPopupCopyErrorNums.addEventListener('click', () => {
+      const failedItems = scraperEngine ? scraperEngine.getFailedItems() : [];
+      if (failedItems.length === 0) return;
+      const text = failedItems.map(f => f.id).join(', ');
+      navigator.clipboard.writeText(text).then(() => {
+        btnPopupCopyErrorNums.textContent = '✓ Tersalin!';
+        setTimeout(() => { btnPopupCopyErrorNums.textContent = '📋 Salin Nomor'; }, 1800);
+      });
+    });
+  }
 
   updateCountBadge();
 });

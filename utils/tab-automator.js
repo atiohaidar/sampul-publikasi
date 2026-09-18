@@ -439,7 +439,7 @@ class TabAutomator {
         }
 
         // Sekarang kita berada di halaman Conference Proceeding IEEE (/xpl/conhome/.../proceeding)
-        onStatus('Halaman Proceeding IEEE: Mencari Front Cover Page & link PDF...');
+        onStatus('Halaman Proceeding IEEE: Mencari Cover Page atau berkas proceeding...');
 
         const scanIeeePageFunc = () => {
           return new Promise((resolve) => {
@@ -479,6 +479,38 @@ class TabAutomator {
                 year = yearMatch[1] || yearMatch[2];
               }
 
+              // Helper deteksi judul cover langsung
+              const isDirectCover = (title) => {
+                const t = (title || '').trim();
+                if (/\b(?:front\s*cover|back\s*cover|cover\s*page|inside\s*(?:front\s*)?cover)\b/i.test(t)) return true;
+                if (/\bcovers?\b/i.test(t)) {
+                  if (/coverage|discovering|recovering|undercover/i.test(t)) return false;
+                  if (/\b(?:radio|network|land|cloud|spatial|code|test|fault|sensor|depth)\s+cover/i.test(t)) return false;
+                  return true;
+                }
+                return false;
+              };
+
+              // Helper deteksi Proceedings, Front Matter, Title Page, Hak Cipta, Prelims, dsb.
+              const isProceedingsOrFrontMatter = (title) => {
+                const t = (title || '').trim();
+                const kw = [
+                  /\bproceedings?\b/i,
+                  /\bfront\s*matter\b/i,
+                  /\btitle\s*page\b/i,
+                  /\bprelimin(?:ary|aries)\b/i,
+                  /\bcopyright\b/i,
+                  /\btable\s*of\s*contents\b/i,
+                  /\bcontents\b/i,
+                  /\bpreface\b/i,
+                  /\bforeword\b/i,
+                  /\bwelcome\s*(?:message|address)\b/i,
+                  /\b(?:organizing\s*)?committee\b/i,
+                  /\bauthor\s*index\b/i
+                ];
+                return kw.some(regex => regex.test(t));
+              };
+
               // Fungsi ekstraksi link PDF dari item
               const getPdfInfo = (item) => {
                 const pdfLink = item.querySelector(
@@ -494,68 +526,107 @@ class TabAutomator {
                 return { pdfUrl: fullUrl, directUrl, arnumber };
               };
 
-              // Prioritas 1: Scan item yang mengandung kata "cover" (misal: "Cover Page", "Front Cover Page")
+              let bestCover = null;
+              let bestCandidate = null;
+
               for (let i = 0; i < items.length; i++) {
                 const item = items[i];
                 const titleEl = item.querySelector('h2, .result-item-title, .title, [xplmathjax]');
-                const text = titleEl ? titleEl.textContent.trim().toLowerCase() : '';
-                if (text.includes('cover')) {
-                  const pdfInfo = getPdfInfo(item);
-                  if (pdfInfo) {
-                    resolve({
-                      success: true,
-                      coverFound: true,
-                      conferenceName: conferenceName || 'IEEE Conference Proceeding',
-                      year: year || '',
-                      coverTitle: titleEl.textContent.trim(),
-                      coverPdfUrl: pdfInfo.pdfUrl,
-                      coverDirectPdfUrl: pdfInfo.directUrl,
-                      coverArnumber: pdfInfo.arnumber
-                    });
-                    return;
-                  }
+                const rawTitle = titleEl ? titleEl.textContent.trim() : '';
+                const pdfInfo = getPdfInfo(item);
+                if (!pdfInfo) continue;
+
+                // Cek apakah ada daftar nama author
+                const authorEl = item.querySelector('xpl-authors-name-list, .author, .authors-info');
+                const hasAuthors = !!(authorEl && authorEl.textContent.trim().length > 0);
+
+                let priority = 10;
+                if (isDirectCover(rawTitle)) {
+                  priority = 100; // Prioritas 1: Cover langsung
+                } else if (isProceedingsOrFrontMatter(rawTitle)) {
+                  priority = 80;  // Prioritas 2: Proceedings / Front Matter
+                } else if (!hasAuthors) {
+                  priority = 50;  // Prioritas 3: Dokumen non-paper (tanpa author)
+                }
+
+                const candidateObj = {
+                  coverTitle: rawTitle || 'Proceeding Document',
+                  coverPdfUrl: pdfInfo.pdfUrl,
+                  coverDirectPdfUrl: pdfInfo.directUrl,
+                  coverArnumber: pdfInfo.arnumber,
+                  priority,
+                  hasAuthors,
+                  itemIndex: i
+                };
+
+                if (priority >= 80 && (!bestCover || priority > bestCover.priority)) {
+                  bestCover = candidateObj;
+                }
+
+                if (!bestCandidate || priority > bestCandidate.priority) {
+                  bestCandidate = candidateObj;
                 }
               }
 
-              // Prioritas 2: Scan kata kunci halaman depan (copyright page, front matter, title page, table of contents)
-              const frontKeywords = ['copyright page', 'front matter', 'title page', 'table of contents', 'half title', 'preliminar', 'preface'];
-              for (let i = 0; i < items.length; i++) {
-                const item = items[i];
-                const titleEl = item.querySelector('h2, .result-item-title, .title, [xplmathjax]');
-                const text = titleEl ? titleEl.textContent.trim().toLowerCase() : '';
-                if (frontKeywords.some(kw => text.includes(kw))) {
-                  const pdfInfo = getPdfInfo(item);
-                  if (pdfInfo) {
-                    resolve({
-                      success: true,
-                      coverFound: true,
-                      conferenceName: conferenceName || 'IEEE Conference Proceeding',
-                      year: year || '',
-                      coverTitle: titleEl.textContent.trim(),
-                      coverPdfUrl: pdfInfo.pdfUrl,
-                      coverDirectPdfUrl: pdfInfo.directUrl,
-                      coverArnumber: pdfInfo.arnumber
-                    });
-                    return;
-                  }
-                }
-              }
-
-              // Cek paginasi di halaman ini
+              // Deteksi Paginasi Lengkap IEEE
               const pageButtons = Array.from(document.querySelectorAll(
                 'xpl-paginator button, .pagination-bar button, ul.pagination button, .pagination-bar a'
               ));
               const numericPages = pageButtons
                 .map(b => parseInt((b.innerText || b.textContent || '').trim(), 10))
                 .filter(n => !isNaN(n) && n > 0);
-              const maxPage = numericPages.length > 0 ? Math.max(...numericPages) : 1;
+              const maxVisiblePage = numericPages.length > 0 ? Math.max(...numericPages) : 1;
+
+              const activeBtn = document.querySelector('xpl-paginator button.active, .pagination button.active, xpl-paginator li.active button');
+              const currentPage = activeBtn ? parseInt(activeBtn.textContent.trim(), 10) : (numericPages[0] || 1);
+
+              // Tombol Next set (misal: Next 10 pages / stats-Pagination_Next_11)
+              const nextSetBtn = document.querySelector('.next-page-set button, button[class*="stats-Pagination_Next_"]');
+              let hasNextSet = false;
+              let nextSetPage = 0;
+              if (nextSetBtn && !nextSetBtn.disabled && !nextSetBtn.classList.contains('disabled') && !nextSetBtn.getAttribute('disabled')) {
+                const className = nextSetBtn.className || '';
+                const match = className.match(/stats-Pagination_Next_(\d+)/);
+                nextSetPage = match ? parseInt(match[1], 10) : (maxVisiblePage + 1);
+                hasNextSet = true;
+              }
+
+              // Tombol Next panah tunggal (misal: stats-Pagination_arrow_next_11)
+              const nextArrowBtn = document.querySelector('.next-btn button, button[class*="stats-Pagination_arrow_next_"]');
+              let hasNext = false;
+              let nextArrowPage = 0;
+              if (nextArrowBtn && !nextArrowBtn.disabled && !nextArrowBtn.classList.contains('disabled') && !nextArrowBtn.getAttribute('disabled')) {
+                const className = nextArrowBtn.className || '';
+                const match = className.match(/stats-Pagination_arrow_next_(\d+)/);
+                nextArrowPage = match ? parseInt(match[1], 10) : (currentPage + 1);
+                hasNext = true;
+              }
+
+              const isLastPage = !hasNextSet && !hasNext;
+              const chosen = bestCover || null;
 
               resolve({
                 success: true,
-                coverFound: false,
-                maxPage: maxPage,
+                coverFound: !!chosen,
                 conferenceName: conferenceName || 'IEEE Conference Proceeding',
-                year: year || ''
+                year: year || '',
+                coverTitle: chosen ? chosen.coverTitle : '',
+                coverPdfUrl: chosen ? chosen.coverPdfUrl : '',
+                coverDirectPdfUrl: chosen ? chosen.coverDirectPdfUrl : '',
+                coverArnumber: chosen ? chosen.coverArnumber : '',
+                priority: chosen ? chosen.priority : 0,
+                bestCandidate: bestCandidate,
+                pagination: {
+                  currentPage,
+                  numericPages,
+                  maxVisiblePage,
+                  hasNextSet,
+                  nextSetPage,
+                  hasNext,
+                  nextArrowPage,
+                  isLastPage
+                },
+                maxPage: maxVisiblePage
               });
             };
 
@@ -569,40 +640,146 @@ class TabAutomator {
           throw new Error(ieeeProceedingData ? ieeeProceedingData.error : 'Gagal membaca proceeding IEEE.');
         }
 
-        // Jika di halaman 1 tidak ada Cover, dan proceeding memiliki beberapa halaman:
-        if (!ieeeProceedingData.coverFound && ieeeProceedingData.maxPage > 1) {
-          const lastPage = ieeeProceedingData.maxPage;
-          onStatus(`Cover tidak ada di halaman awal IEEE. Membuka halaman terakhir (hlm ${lastPage})...`);
-
-          const baseUrl = currentUrl.split('?')[0];
-          const lastPageUrl = `${baseUrl}?pageNumber=${lastPage}`;
-
-          await this.updateTabUrl(tabId, lastPageUrl, activeTab);
-          await this.waitForTabLoad(tabId, timeoutMs);
-          await this.sleep(2500);
-
-          currentTab = await this.getTab(tabId);
-          currentUrl = (currentTab && currentTab.url) ? currentTab.url : lastPageUrl;
-
-          onStatus('Halaman terakhir IEEE: Memeriksa Cover Page...');
-          const lastPageData = await this.executeInTab(tabId, scanIeeePageFunc);
-          if (lastPageData && lastPageData.success && lastPageData.coverFound) {
-            if (!lastPageData.conferenceName && ieeeProceedingData.conferenceName) {
-              lastPageData.conferenceName = ieeeProceedingData.conferenceName;
+        // Simpan kandidat terbaik yang mungkin menjadi cover (proceedings/prelims/item non-paper)
+        let bestOverallCandidate = (ieeeProceedingData.coverFound && ieeeProceedingData.priority >= 80)
+          ? {
+              coverTitle: ieeeProceedingData.coverTitle,
+              coverPdfUrl: ieeeProceedingData.coverPdfUrl,
+              coverDirectPdfUrl: ieeeProceedingData.coverDirectPdfUrl,
+              coverArnumber: ieeeProceedingData.coverArnumber,
+              priority: ieeeProceedingData.priority,
+              conferenceName: ieeeProceedingData.conferenceName,
+              year: ieeeProceedingData.year
             }
-            if (!lastPageData.year && ieeeProceedingData.year) {
-              lastPageData.year = ieeeProceedingData.year;
+          : (ieeeProceedingData.bestCandidate
+              ? {
+                  ...ieeeProceedingData.bestCandidate,
+                  conferenceName: ieeeProceedingData.conferenceName,
+                  year: ieeeProceedingData.year
+                }
+              : null);
+
+        // Jika di halaman awal belum ada Cover standar (Prioritas >= 80),
+        // telusuri paginasi ke set halaman berikutnya hingga mencapai halaman terakhir:
+        if (!ieeeProceedingData.coverFound || ieeeProceedingData.priority < 80) {
+          let currentPagin = ieeeProceedingData.pagination || { isLastPage: true };
+          const visitedPages = new Set([currentPagin.currentPage || 1]);
+          let jumpCount = 0;
+          const MAX_JUMPS = 8;
+
+          while (!currentPagin.isLastPage && jumpCount < MAX_JUMPS) {
+            jumpCount++;
+
+            // Tentukan target loncatan:
+            // 1. Jika ada blok 10 halaman berikutnya (Next 10 / stats-Pagination_Next_11), lompat ke sana
+            let targetPage = 0;
+            if (currentPagin.hasNextSet && currentPagin.nextSetPage > 0 && !visitedPages.has(currentPagin.nextSetPage)) {
+              targetPage = currentPagin.nextSetPage;
+            } else if (currentPagin.maxVisiblePage > currentPagin.currentPage && !visitedPages.has(currentPagin.maxVisiblePage)) {
+              targetPage = currentPagin.maxVisiblePage;
+            } else if (currentPagin.hasNext && currentPagin.nextArrowPage > 0 && !visitedPages.has(currentPagin.nextArrowPage)) {
+              targetPage = currentPagin.nextArrowPage;
+            } else {
+              break;
             }
-            ieeeProceedingData = lastPageData;
+
+            visitedPages.add(targetPage);
+            onStatus(`Cover belum ada di hlm ${currentPagin.currentPage}. Menelusuri halaman IEEE berikutnya (hlm ${targetPage})...`);
+
+            const baseUrl = currentUrl.split('?')[0];
+            const nextPageUrl = `${baseUrl}?pageNumber=${targetPage}`;
+
+            await this.updateTabUrl(tabId, nextPageUrl, activeTab);
+            await this.waitForTabLoad(tabId, timeoutMs);
+            await this.sleep(2200);
+
+            currentTab = await this.getTab(tabId);
+            currentUrl = (currentTab && currentTab.url) ? currentTab.url : nextPageUrl;
+
+            const pageData = await this.executeInTab(tabId, scanIeeePageFunc);
+            if (pageData && pageData.success) {
+              if (!ieeeProceedingData.conferenceName && pageData.conferenceName) {
+                ieeeProceedingData.conferenceName = pageData.conferenceName;
+              }
+              if (!ieeeProceedingData.year && pageData.year) {
+                ieeeProceedingData.year = pageData.year;
+              }
+
+              // Jika ditemukan Cover (Prio 100) atau Proceedings/Front Matter (Prio 80)
+              if (pageData.coverFound && pageData.priority >= 80) {
+                ieeeProceedingData = pageData;
+                break;
+              }
+
+              // Simpan jika ditemukan kandidat alternatif yang lebih baik
+              if (pageData.bestCandidate && (!bestOverallCandidate || pageData.bestCandidate.priority > (bestOverallCandidate.priority || 0))) {
+                bestOverallCandidate = {
+                  ...pageData.bestCandidate,
+                  conferenceName: pageData.conferenceName || ieeeProceedingData.conferenceName,
+                  year: pageData.year || ieeeProceedingData.year
+                };
+              }
+
+              currentPagin = pageData.pagination || { isLastPage: true };
+            } else {
+              break;
+            }
+          }
+
+          // Jika sudah sampai di blok halaman terakhir namun belum di nomor halaman tertinggi pada blok tersebut:
+          if ((!ieeeProceedingData.coverFound || ieeeProceedingData.priority < 80) && currentPagin.maxVisiblePage && !visitedPages.has(currentPagin.maxVisiblePage)) {
+            const finalPage = currentPagin.maxVisiblePage;
+            visitedPages.add(finalPage);
+            onStatus(`Membuka halaman paling akhir IEEE (hlm ${finalPage})...`);
+
+            const baseUrl = currentUrl.split('?')[0];
+            const finalPageUrl = `${baseUrl}?pageNumber=${finalPage}`;
+
+            await this.updateTabUrl(tabId, finalPageUrl, activeTab);
+            await this.waitForTabLoad(tabId, timeoutMs);
+            await this.sleep(2200);
+
+            currentTab = await this.getTab(tabId);
+            currentUrl = (currentTab && currentTab.url) ? currentTab.url : finalPageUrl;
+
+            const finalPageData = await this.executeInTab(tabId, scanIeeePageFunc);
+            if (finalPageData && finalPageData.success) {
+              if (finalPageData.coverFound && finalPageData.priority >= 80) {
+                ieeeProceedingData = finalPageData;
+              } else if (finalPageData.bestCandidate && (!bestOverallCandidate || finalPageData.bestCandidate.priority > (bestOverallCandidate.priority || 0))) {
+                bestOverallCandidate = {
+                  ...finalPageData.bestCandidate,
+                  conferenceName: finalPageData.conferenceName || ieeeProceedingData.conferenceName,
+                  year: finalPageData.year || ieeeProceedingData.year
+                };
+              }
+            }
           }
         }
 
-        // Jika setelah memeriksa halaman awal dan halaman terakhir tetap tidak ada cover:
-        if (!ieeeProceedingData.coverFound) {
-          throw new Error('Tidak dapat menemukan Cover Page pada proceeding IEEE ini (telah diperiksa halaman awal dan akhir).');
+        // PENANGANAN FALLBACK SESUAI PERMINTAAN:
+        // "ada yang nama filennya "Proceedings" atau lainnya. kalau engga nemu yang ada cover nya, yaudah ambil salah satuaja yang memungkinkan itu cover"
+        if ((!ieeeProceedingData.coverFound || ieeeProceedingData.priority < 80) && bestOverallCandidate && bestOverallCandidate.coverPdfUrl) {
+          onStatus(`Cover bertuliskan 'Cover' tidak ditemukan. Menggunakan berkas proceeding yang memungkinkan: "${bestOverallCandidate.coverTitle}"...`);
+          ieeeProceedingData = {
+            success: true,
+            coverFound: true,
+            conferenceName: ieeeProceedingData.conferenceName || bestOverallCandidate.conferenceName || 'IEEE Conference Proceeding',
+            year: ieeeProceedingData.year || bestOverallCandidate.year || '',
+            coverTitle: bestOverallCandidate.coverTitle,
+            coverPdfUrl: bestOverallCandidate.coverPdfUrl,
+            coverDirectPdfUrl: bestOverallCandidate.coverDirectPdfUrl,
+            coverArnumber: bestOverallCandidate.coverArnumber,
+            priority: bestOverallCandidate.priority || 10
+          };
         }
 
-        onStatus(`Ditemukan Cover IEEE: ${ieeeProceedingData.coverTitle}. Menyiapkan unduhan...`);
+        // Jika setelah semua penelusuran dan fallback tetap tidak ada berkas PDF yang valid:
+        if (!ieeeProceedingData.coverFound || !ieeeProceedingData.coverPdfUrl) {
+          throw new Error('Tidak dapat menemukan Cover Page atau berkas proceeding pada IEEE ini.');
+        }
+
+        onStatus(`Ditemukan Cover/Proceeding IEEE: ${ieeeProceedingData.coverTitle}. Menyiapkan unduhan...`);
 
         return {
           publisherType: 'IEEE',

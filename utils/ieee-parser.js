@@ -85,15 +85,42 @@ function parseIeeeProceedingPage(docOrHtml, sourceUrl = '') {
     year = yearMatch[1] || yearMatch[2];
   }
 
-  // 3. Cari Front Cover Page di daftar hasil proceeding
-  let coverPdfUrl = '';
-  let coverDirectPdfUrl = '';
-  let coverTitle = '';
-  let coverArnumber = '';
+  // Helper: Deteksi judul cover langsung (Cover, Front Cover, Cover Page, Back Cover)
+  // Menghindari false positive pada istilah paper seperti "coverage" atau "undercover"
+  const isDirectCover = (title) => {
+    const t = (title || '').trim();
+    if (/\b(?:front\s*cover|back\s*cover|cover\s*page|inside\s*(?:front\s*)?cover)\b/i.test(t)) return true;
+    if (/\bcovers?\b/i.test(t)) {
+      if (/coverage|discovering|recovering|undercover/i.test(t)) return false;
+      if (/\b(?:radio|network|land|cloud|spatial|code|test|fault|sensor|depth)\s+cover/i.test(t)) return false;
+      return true;
+    }
+    return false;
+  };
 
+  // Helper: Deteksi judul Proceedings, Front Matter, Title Page, Hak Cipta, Prelims, dsb.
+  const isProceedingsOrFrontMatter = (title) => {
+    const t = (title || '').trim();
+    const kw = [
+      /\bproceedings?\b/i,
+      /\bfront\s*matter\b/i,
+      /\btitle\s*page\b/i,
+      /\bprelimin(?:ary|aries)\b/i,
+      /\bcopyright\b/i,
+      /\btable\s*of\s*contents\b/i,
+      /\bcontents\b/i,
+      /\bpreface\b/i,
+      /\bforeword\b/i,
+      /\bwelcome\s*(?:message|address)\b/i,
+      /\b(?:organizing\s*)?committee\b/i,
+      /\bauthor\s*index\b/i
+    ];
+    return kw.some(regex => regex.test(t));
+  };
+
+  // 3. Scan item proceeding dan ekstrak info PDF
   const items = doc.querySelectorAll('xpl-issue-results-items, .result-item, .List-results-items');
 
-  // Cari Cover / Front Matter di daftar proceeding dengan memprioritaskan urutan paling atas
   const getPdfInfo = (item) => {
     const pdfLink = item.querySelector(
       'a[href*="/stamp/stamp.jsp"], a[aria-label="PDF"], a.stats_PDF_, a[href*="/stampPDF/"], a[href*="getPDF.jsp"]'
@@ -108,66 +135,108 @@ function parseIeeeProceedingPage(docOrHtml, sourceUrl = '') {
     return { pdfUrl: fullUrl, directUrl, arnumber };
   };
 
-  let matchedTitle = '';
+  let bestCover = null;
+  let bestCandidate = null;
 
-  // Prioritas 1: Scan dari urutan PALING ATAS (item 0, 1, 2...) yang mengandung kata "cover"
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
-    const titleEl = item.querySelector('h2, .result-item-title, .title');
-    const text = titleEl ? titleEl.textContent.trim().toLowerCase() : '';
-    if (text.includes('cover')) {
-      const pdfInfo = getPdfInfo(item);
-      if (pdfInfo) {
-        matchedTitle = titleEl.textContent.trim();
-        coverPdfUrl = pdfInfo.pdfUrl;
-        coverDirectPdfUrl = pdfInfo.directUrl;
-        coverArnumber = pdfInfo.arnumber;
-        break;
-      }
+    const titleEl = item.querySelector('h2, .result-item-title, .title, [xplmathjax]');
+    const rawTitle = titleEl ? titleEl.textContent.trim() : '';
+    const pdfInfo = getPdfInfo(item);
+    if (!pdfInfo) continue;
+
+    // Cek apakah ada author
+    const authorEl = item.querySelector('xpl-authors-name-list, .author, .authors-info');
+    const hasAuthors = !!(authorEl && authorEl.textContent.trim().length > 0);
+
+    let priority = 10;
+    if (isDirectCover(rawTitle)) {
+      priority = 100; // Prioritas 1: Cover langsung
+    } else if (isProceedingsOrFrontMatter(rawTitle)) {
+      priority = 80;  // Prioritas 2: Proceedings / Front Matter
+    } else if (!hasAuthors) {
+      priority = 50;  // Prioritas 3: Dokumen non-paper (tanpa author)
+    }
+
+    const candidateObj = {
+      coverTitle: rawTitle || 'Proceeding Document',
+      coverPdfUrl: pdfInfo.pdfUrl,
+      coverDirectPdfUrl: pdfInfo.directUrl,
+      coverArnumber: pdfInfo.arnumber,
+      priority,
+      hasAuthors,
+      itemIndex: i
+    };
+
+    if (priority >= 80 && (!bestCover || priority > bestCover.priority)) {
+      bestCover = candidateObj;
+    }
+
+    if (!bestCandidate || priority > bestCandidate.priority) {
+      bestCandidate = candidateObj;
     }
   }
 
-  // Prioritas 2: Jika tidak ada kata "cover", scan untuk kata kunci halaman depan / informasi hak cipta
-  if (!coverPdfUrl) {
-    const frontKeywords = ['copyright page', 'front matter', 'title page', 'table of contents', 'half title', 'preliminar', 'preface'];
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      const titleEl = item.querySelector('h2, .result-item-title, .title, [xplmathjax]');
-      const text = titleEl ? titleEl.textContent.trim().toLowerCase() : '';
-      if (frontKeywords.some(kw => text.includes(kw))) {
-        const pdfInfo = getPdfInfo(item);
-        if (pdfInfo) {
-          matchedTitle = titleEl.textContent.trim();
-          coverPdfUrl = pdfInfo.pdfUrl;
-          coverDirectPdfUrl = pdfInfo.directUrl;
-          coverArnumber = pdfInfo.arnumber;
-          break;
-        }
-      }
-    }
-  }
-
-  // Deteksi jumlah halaman paginasi jika ada
+  // 4. Deteksi Detail Paginasi Lengkap (Single arrow, Next 10 set, active, max page)
   const pageButtons = Array.from(doc.querySelectorAll(
     'xpl-paginator button, .pagination-bar button, ul.pagination button, .pagination-bar a'
   ));
   const numericPages = pageButtons
     .map(b => parseInt((b.innerText || b.textContent || '').trim(), 10))
     .filter(n => !isNaN(n) && n > 0);
-  const maxPage = numericPages.length > 0 ? Math.max(...numericPages) : 1;
+  const maxVisiblePage = numericPages.length > 0 ? Math.max(...numericPages) : 1;
 
-  const coverFound = !!coverPdfUrl;
+  const activeBtn = doc.querySelector('xpl-paginator button.active, .pagination button.active, xpl-paginator li.active button');
+  const currentPage = activeBtn ? parseInt(activeBtn.textContent.trim(), 10) : (numericPages[0] || 1);
+
+  // Next page set button (e.g. Next 10 pages / stats-Pagination_Next_11)
+  const nextSetBtn = doc.querySelector('.next-page-set button, button[class*="stats-Pagination_Next_"]');
+  let hasNextSet = false;
+  let nextSetPage = 0;
+  if (nextSetBtn && !nextSetBtn.disabled && !nextSetBtn.classList.contains('disabled') && !nextSetBtn.getAttribute('disabled')) {
+    const className = nextSetBtn.className || '';
+    const match = className.match(/stats-Pagination_Next_(\d+)/);
+    nextSetPage = match ? parseInt(match[1], 10) : (maxVisiblePage + 1);
+    hasNextSet = true;
+  }
+
+  // Next single page arrow button (e.g. stats-Pagination_arrow_next_11)
+  const nextArrowBtn = doc.querySelector('.next-btn button, button[class*="stats-Pagination_arrow_next_"]');
+  let hasNext = false;
+  let nextArrowPage = 0;
+  if (nextArrowBtn && !nextArrowBtn.disabled && !nextArrowBtn.classList.contains('disabled') && !nextArrowBtn.getAttribute('disabled')) {
+    const className = nextArrowBtn.className || '';
+    const match = className.match(/stats-Pagination_arrow_next_(\d+)/);
+    nextArrowPage = match ? parseInt(match[1], 10) : (currentPage + 1);
+    hasNext = true;
+  }
+
+  const isLastPage = !hasNextSet && !hasNext;
+
+  const chosen = bestCover || null;
 
   return {
     success: true,
-    coverFound: coverFound,
-    maxPage: maxPage,
+    coverFound: !!chosen,
     conferenceName: conferenceName || 'IEEE Conference Proceeding',
     year: year || '',
-    coverTitle: matchedTitle || (coverFound ? 'Cover' : ''),
-    coverPdfUrl: coverPdfUrl || '',
-    coverDirectPdfUrl: coverDirectPdfUrl || coverPdfUrl || '',
-    coverArnumber: coverArnumber || '',
+    coverTitle: chosen ? chosen.coverTitle : '',
+    coverPdfUrl: chosen ? chosen.coverPdfUrl : '',
+    coverDirectPdfUrl: chosen ? chosen.coverDirectPdfUrl : '',
+    coverArnumber: chosen ? chosen.coverArnumber : '',
+    priority: chosen ? chosen.priority : 0,
+    bestCandidate: bestCandidate,
+    pagination: {
+      currentPage,
+      numericPages,
+      maxVisiblePage,
+      hasNextSet,
+      nextSetPage,
+      hasNext,
+      nextArrowPage,
+      isLastPage
+    },
+    maxPage: maxVisiblePage,
     sourceUrl: sourceUrl || ''
   };
 }

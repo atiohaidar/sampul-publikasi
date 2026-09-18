@@ -37,6 +37,21 @@ class SpringerScraperEngine {
       .filter(Boolean);
   }
 
+  getFailedItems() {
+    return this.results
+      .filter(item => item.status && (item.status.startsWith('Gagal') || item.status === 'Failed'))
+      .map(item => ({
+        index: item.index,
+        id: String(item.customId || item.id || item.index),
+        url: item.scopusUrl || item.sourceUrl || '',
+        error: item.status ? item.status.replace(/^Gagal:\s*/i, '') : 'Gagal'
+      }));
+  }
+
+  getFailedNumbers() {
+    return this.getFailedItems().map(f => f.id);
+  }
+
   async sleep(ms) {
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
@@ -47,7 +62,9 @@ class SpringerScraperEngine {
   async run({
     urls = [],
     downloadCovers = true,
-    subfolder = 'conference-covers',
+    subfolder = 'book-covers',
+    savePngFolder = true,
+    subfolderPng = 'book-covers-png',
     namingPattern = 'id_only',
     delayMs = 1500,
     activeTab = true,
@@ -149,7 +166,10 @@ class SpringerScraperEngine {
         bookData.customId = currentId;
 
         // Tentukan folder penyimpanan
-        const targetSubfolder = subfolder ? subfolder.replace(/[/\\]+$/, '') : 'covers';
+        const targetSubfolder = subfolder ? subfolder.replace(/[/\\]+$/, '') : 'book-covers';
+        const targetSubfolderPng = (subfolderPng && subfolderPng.trim())
+          ? subfolderPng.trim().replace(/[/\\]+$/, '')
+          : `${targetSubfolder}-png`;
 
         // ========================================================
         // KASUS 1: IEEE Xplore (Cover adalah Dokumen PDF)
@@ -157,55 +177,68 @@ class SpringerScraperEngine {
         if (bookData.isPdfCover && bookData.coverPdfUrl) {
           const safeId = sanitizeFilename(String(currentId || index), 'item');
           let pdfFilename = '';
-          let jpgFilename = '';
+          let pngFilename = '';
 
           // Jika pola id_only (sesuai ID) atau jika ada input ID, nama file cover langsung dari ID!
           const useIdNaming = (namingPattern === 'id_only' || !namingPattern || (namingPattern === 'title' && currentId));
           if (useIdNaming) {
             pdfFilename = `${safeId}.pdf`;
-            jpgFilename = `${safeId}.jpg`;
+            pngFilename = `${safeId}.png`;
           } else {
             const baseName = formatCoverFilename(namingPattern, bookData, '');
             const label = sanitizeFilename(bookData.subtitle || 'Cover');
             pdfFilename = `${baseName} - ${label}.pdf`;
-            jpgFilename = `${baseName}.jpg`;
+            pngFilename = `${baseName}.png`;
           }
 
           let downloadedCoverName = pdfFilename;
 
-          if (downloadCovers) {
-            // 1. Download berkas PDF Cover asli (dinamai sesuai ID)
-            if (bookData.coverPdfUrl) {
+          // 1. Download berkas PDF Cover asli ke folder utama
+          if (downloadCovers && bookData.coverPdfUrl) {
+            onProgress({
+              index,
+              total,
+              percent: Math.round(((index - 0.3) / total) * 100),
+              status: `[${index}/${total}] Mengunduh berkas PDF cover (${pdfFilename})...`,
+              url: currentUrl
+            });
+            await this.triggerDownload(bookData.coverPdfUrl, `${targetSubfolder}/${pdfFilename}`);
+          }
+
+          // 2. Simpan cover versi PNG ke folder khusus PNG
+          if (savePngFolder && bookData.coverPdfUrl && typeof renderPdfPageToPng === 'function') {
+            try {
               onProgress({
                 index,
                 total,
-                percent: Math.round(((index - 0.3) / total) * 100),
-                status: `[${index}/${total}] Mengunduh berkas PDF cover (${pdfFilename})...`,
+                percent: Math.round(((index - 0.15) / total) * 100),
+                status: `[${index}/${total}] Merender cover PDF ke format PNG (${pngFilename})...`,
                 url: currentUrl
               });
-              await this.triggerDownload(bookData.coverPdfUrl, `${targetSubfolder}/${pdfFilename}`);
-            }
 
-            // 2. Coba render halaman 1 PDF menjadi JPG dengan nama yang sama sesuai ID
-            if (typeof renderPdfPageToJpeg === 'function' && bookData.coverPdfUrl) {
-              try {
-                onProgress({
-                  index,
-                  total,
-                  percent: Math.round(((index - 0.15) / total) * 100),
-                  status: `[${index}/${total}] Merender cover PDF ke gambar JPG (${jpgFilename})...`,
-                  url: currentUrl
-                });
-
-                const jpgDataUrl = await renderPdfPageToJpeg(bookData.coverPdfUrl, { scale: 1.8, timeoutMs: 8000 });
-                if (jpgDataUrl) {
-                  await this.triggerDownload(jpgDataUrl, `${targetSubfolder}/${jpgFilename}`);
-                  bookData.coverThumbnailUrl = jpgDataUrl;
-                  downloadedCoverName = (namingPattern === 'id_only') ? pdfFilename : `${jpgFilename} & ${pdfFilename}`;
-                }
-              } catch (renderErr) {
-                console.warn('[Scraper] Melewati render JPG (file PDF cover utama tetap terunduh):', renderErr.message);
+              const pngDataUrl = await renderPdfPageToPng(bookData.coverPdfUrl, { scale: 2.0, timeoutMs: 12000 });
+              if (pngDataUrl) {
+                await this.triggerDownload(pngDataUrl, `${targetSubfolderPng}/${pngFilename}`);
+                bookData.coverThumbnailUrl = pngDataUrl;
+                bookData.coverPngFilename = pngFilename;
+                bookData.coverPngDataUrl = pngDataUrl;
+                downloadedCoverName = `${pdfFilename} + ${targetSubfolderPng}/${pngFilename}`;
               }
+            } catch (renderErr) {
+              console.warn('[Scraper] Render PNG gagal (file PDF tetap tersimpan):', renderErr.message);
+            }
+          } else if (typeof renderPdfPageToJpeg === 'function' && bookData.coverPdfUrl) {
+            try {
+              const jpgFilename = pngFilename.replace(/\.png$/i, '.jpg');
+              const jpgDataUrl = await renderPdfPageToJpeg(bookData.coverPdfUrl, { scale: 1.8, timeoutMs: 8000 });
+              if (jpgDataUrl) {
+                if (downloadCovers) {
+                  await this.triggerDownload(jpgDataUrl, `${targetSubfolder}/${jpgFilename}`);
+                }
+                bookData.coverThumbnailUrl = jpgDataUrl;
+              }
+            } catch (renderErr) {
+              console.warn('[Scraper] Melewati render JPG:', renderErr.message);
             }
           }
 
@@ -224,17 +257,52 @@ class SpringerScraperEngine {
           }
 
           let coverFilename = '';
+          let pngFilename = '';
+          const safeId = sanitizeFilename(String(currentId || index), 'item');
+
           const useIdNamingImg = (namingPattern === 'id_only' || !namingPattern || (namingPattern === 'title' && currentId));
           if (useIdNamingImg) {
-            const safeId = sanitizeFilename(String(currentId || index), 'item');
             coverFilename = `${safeId}${ext}`;
+            pngFilename = `${safeId}.png`;
           } else {
             coverFilename = formatCoverFilename(namingPattern, bookData, ext);
+            pngFilename = formatCoverFilename(namingPattern, bookData, '.png');
           }
           bookData.coverFilename = coverFilename;
 
+          // 1. Download file asli (JPG/GIF/WebP) ke subfolder utama
           if (downloadCovers && bookData.coverUrl) {
             await this.triggerDownload(bookData.coverUrl, `${targetSubfolder}/${coverFilename}`);
+          }
+
+          // 2. Konversi ke PNG dan simpan ke folder khusus PNG
+          if (savePngFolder && bookData.coverUrl) {
+            try {
+              onProgress({
+                index,
+                total,
+                percent: Math.round(((index - 0.15) / total) * 100),
+                status: `[${index}/${total}] Mengonversi cover ke format PNG (${pngFilename})...`,
+                url: currentUrl
+              });
+
+              if (ext === '.png') {
+                await this.triggerDownload(bookData.coverUrl, `${targetSubfolderPng}/${pngFilename}`);
+                bookData.coverThumbnailUrl = bookData.coverUrl;
+                bookData.coverPngFilename = pngFilename;
+              } else if (typeof convertImageToPng === 'function') {
+                const pngDataUrl = await convertImageToPng(bookData.coverUrl, { timeoutMs: 10000 });
+                if (pngDataUrl) {
+                  await this.triggerDownload(pngDataUrl, `${targetSubfolderPng}/${pngFilename}`);
+                  bookData.coverThumbnailUrl = pngDataUrl;
+                  bookData.coverPngFilename = pngFilename;
+                  bookData.coverPngDataUrl = pngDataUrl;
+                  bookData.coverFilename = `${coverFilename} + ${targetSubfolderPng}/${pngFilename}`;
+                }
+              }
+            } catch (pngErr) {
+              console.warn('[Scraper] Konversi PNG gagal (file asli tetap tersimpan):', pngErr.message);
+            }
           }
         }
 

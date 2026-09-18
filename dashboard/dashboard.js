@@ -15,9 +15,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnDashClear = document.getElementById('btnDashClear');
 
   const dashSubfolder = document.getElementById('dashSubfolder');
+  const dashSubfolderPng = document.getElementById('dashSubfolderPng');
   const dashNamingPattern = document.getElementById('dashNamingPattern');
   const dashDelay = document.getElementById('dashDelay');
   const dashChkActiveTab = document.getElementById('dashChkActiveTab');
+  const dashChkPngFolder = document.getElementById('dashChkPngFolder');
   const dashChkCovers = document.getElementById('dashChkCovers');
   const dashChkAutoCsv = document.getElementById('dashChkAutoCsv');
 
@@ -38,10 +40,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const dashProgressBar = document.getElementById('dashProgressBar');
   const dashLiveDetail = document.getElementById('dashLiveDetail');
 
+  const dashErrorBox = document.getElementById('dashErrorBox');
+  const dashErrorSummaryTitle = document.getElementById('dashErrorSummaryTitle');
+  const dashErrorNumberBadges = document.getElementById('dashErrorNumberBadges');
+  const dashErrorTableBody = document.getElementById('dashErrorTableBody');
+  const btnCopyErrorNumbers = document.getElementById('btnCopyErrorNumbers');
+  const btnCopyErrorRows = document.getElementById('btnCopyErrorRows');
+  const btnLoadErrorsToInput = document.getElementById('btnLoadErrorsToInput');
+
   const dashTableBody = document.getElementById('dashTableBody');
 
   let scraperEngine = new SpringerScraperEngine();
   let scrapedResults = [];
+  let failedItems = [];
 
   // Parse URLs and ID pairs (supports both plain URLs and ID [TAB/Comma] URL pairs from Excel)
   function parseInputEntries(rawText) {
@@ -90,8 +101,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Load saved settings & pending URLs if transferred from popup
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-    chrome.storage.local.get(['subfolder', 'namingPattern', 'downloadCovers', 'autoCsv', 'activeTab', 'pendingUrls'], (data) => {
+    chrome.storage.local.get(['subfolder', 'subfolderPng', 'namingPattern', 'downloadCovers', 'savePngFolder', 'autoCsv', 'activeTab', 'pendingUrls'], (data) => {
       if (data.subfolder !== undefined && dashSubfolder) dashSubfolder.value = data.subfolder;
+      if (data.subfolderPng !== undefined && dashSubfolderPng) dashSubfolderPng.value = data.subfolderPng;
       if (data.namingPattern !== undefined && data.namingPattern !== 'title' && dashNamingPattern) {
         dashNamingPattern.value = data.namingPattern;
       } else if (dashNamingPattern) {
@@ -99,6 +111,7 @@ document.addEventListener('DOMContentLoaded', () => {
         chrome.storage.local.set({ namingPattern: 'id_only' });
       }
       if (data.downloadCovers !== undefined && dashChkCovers) dashChkCovers.checked = data.downloadCovers;
+      if (data.savePngFolder !== undefined && dashChkPngFolder) dashChkPngFolder.checked = data.savePngFolder;
       if (data.autoCsv !== undefined && dashChkAutoCsv) dashChkAutoCsv.checked = data.autoCsv;
       if (data.activeTab !== undefined && dashChkActiveTab) dashChkActiveTab.checked = data.activeTab;
 
@@ -108,6 +121,37 @@ document.addEventListener('DOMContentLoaded', () => {
         chrome.storage.local.remove(['pendingUrls']);
       }
     });
+
+    if (dashSubfolder) {
+      dashSubfolder.addEventListener('change', () => {
+        chrome.storage.local.set({ subfolder: dashSubfolder.value.trim() });
+      });
+    }
+    if (dashSubfolderPng) {
+      dashSubfolderPng.addEventListener('change', () => {
+        chrome.storage.local.set({ subfolderPng: dashSubfolderPng.value.trim() });
+      });
+    }
+    if (dashChkPngFolder) {
+      dashChkPngFolder.addEventListener('change', () => {
+        chrome.storage.local.set({ savePngFolder: dashChkPngFolder.checked });
+      });
+    }
+    if (dashChkCovers) {
+      dashChkCovers.addEventListener('change', () => {
+        chrome.storage.local.set({ downloadCovers: dashChkCovers.checked });
+      });
+    }
+    if (dashChkAutoCsv) {
+      dashChkAutoCsv.addEventListener('change', () => {
+        chrome.storage.local.set({ autoCsv: dashChkAutoCsv.checked });
+      });
+    }
+    if (dashNamingPattern) {
+      dashNamingPattern.addEventListener('change', () => {
+        chrome.storage.local.set({ namingPattern: dashNamingPattern.value });
+      });
+    }
   }
 
   // Sample Springer URL dengan format ID [TAB] URL
@@ -293,6 +337,119 @@ document.addEventListener('DOMContentLoaded', () => {
     return text.replace(/[&<>"']/g, m => map[m]);
   }
 
+  // Helper Salin Teks ke Clipboard dengan Animasi Feedback
+  function copyTextToClipboard(text, btnElement, successText = '✓ Tersalin!') {
+    const origText = btnElement.innerText || btnElement.textContent;
+    const onSuccess = () => {
+      btnElement.classList.add('copied');
+      btnElement.textContent = successText;
+      setTimeout(() => {
+        btnElement.classList.remove('copied');
+        btnElement.textContent = origText;
+      }, 1800);
+    };
+
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(onSuccess).catch(() => {
+        fallbackCopy(text);
+        onSuccess();
+      });
+    } else {
+      fallbackCopy(text);
+      onSuccess();
+    }
+  }
+
+  function fallbackCopy(text) {
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+
+  // Render Box Log Error
+  function renderErrorBox() {
+    if (!dashErrorBox) return;
+
+    if (failedItems.length === 0) {
+      dashErrorBox.classList.add('hidden');
+      return;
+    }
+
+    dashErrorBox.classList.remove('hidden');
+    if (dashErrorSummaryTitle) {
+      dashErrorSummaryTitle.textContent = `Terdeteksi ${failedItems.length} Link Mengalami Kendala (Gagal)`;
+    }
+
+    // Render badge nomor-nomor yang error
+    if (dashErrorNumberBadges) {
+      dashErrorNumberBadges.innerHTML = '';
+      failedItems.forEach(item => {
+        const badge = document.createElement('span');
+        badge.className = 'badge-num-error';
+        badge.textContent = item.id;
+        badge.title = `Klik untuk salin nomor/ID: ${item.id}`;
+        badge.addEventListener('click', () => {
+          copyTextToClipboard(item.id, badge, '✓');
+        });
+        dashErrorNumberBadges.appendChild(badge);
+      });
+    }
+
+    // Render rincian tabel error
+    if (dashErrorTableBody) {
+      dashErrorTableBody.innerHTML = '';
+      failedItems.forEach(item => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><b>${escapeHtml(item.id)}</b></td>
+          <td><a href="${item.url}" target="_blank" title="Buka Link di Tab Baru">${escapeHtml(item.url)}</a></td>
+          <td style="color:#b91c1c; font-weight:500;">${escapeHtml(item.error || 'Gagal')}</td>
+        `;
+        dashErrorTableBody.appendChild(tr);
+      });
+    }
+  }
+
+  // Tombol Salin Nomor Saja (e.g. 3, 7, 12)
+  if (btnCopyErrorNumbers) {
+    btnCopyErrorNumbers.addEventListener('click', () => {
+      if (failedItems.length === 0) return;
+      const text = failedItems.map(f => f.id).join(', ');
+      copyTextToClipboard(text, btnCopyErrorNumbers, '✓ Nomor Tersalin!');
+    });
+  }
+
+  // Tombol Salin Baris Gagal Lengkap (ID + Link) untuk Excel
+  if (btnCopyErrorRows) {
+    btnCopyErrorRows.addEventListener('click', () => {
+      if (failedItems.length === 0) return;
+      const text = failedItems.map(f => `${f.id}\t${f.url}`).join('\n');
+      copyTextToClipboard(text, btnCopyErrorRows, '✓ Baris Tersalin!');
+    });
+  }
+
+  // Tombol Muat Ulang Link Gagal ke Textarea Input
+  if (btnLoadErrorsToInput) {
+    btnLoadErrorsToInput.addEventListener('click', () => {
+      if (failedItems.length === 0) return;
+      const text = failedItems.map(f => `${f.id}\t${f.url}`).join('\n');
+      dashUrlInput.value = text;
+      updateUrlCount();
+      dashUrlInput.focus();
+      btnLoadErrorsToInput.classList.add('copied');
+      btnLoadErrorsToInput.textContent = '✓ Termuat di Input!';
+      setTimeout(() => {
+        btnLoadErrorsToInput.classList.remove('copied');
+        btnLoadErrorsToInput.textContent = '🔄 Muat ke Kotak Input';
+      }, 1800);
+    });
+  }
+
   // Start Process
   btnDashStart.addEventListener('click', async () => {
     const entries = parseInputEntries(dashUrlInput.value);
@@ -303,11 +460,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     scrapedResults = [];
+    failedItems = [];
     scraperEngine = new SpringerScraperEngine();
 
-    // Reset Table
+    // Reset Table & Error Box
     dashTableBody.innerHTML = '';
     btnDashExportCsv.disabled = true;
+    renderErrorBox();
 
     // Reset Metrics
     metricTotal.textContent = entries.length;
@@ -335,6 +494,8 @@ document.addEventListener('DOMContentLoaded', () => {
       urls: entries,
       downloadCovers: dashChkCovers.checked,
       subfolder: dashSubfolder.value.trim() || 'book-covers',
+      savePngFolder: dashChkPngFolder ? dashChkPngFolder.checked : true,
+      subfolderPng: dashSubfolderPng ? dashSubfolderPng.value.trim() : 'book-covers-png',
       namingPattern: dashNamingPattern.value,
       delayMs: Math.max(500, Math.floor(delaySeconds * 1000)),
       activeTab: shouldFocusTab,
@@ -356,6 +517,15 @@ document.addEventListener('DOMContentLoaded', () => {
         failedCount++;
         metricFailed.textContent = failedCount;
         appendTableRow(failedItem);
+
+        // Catat ke daftar item error untuk panel log
+        failedItems.push({
+          index: failedItem.index,
+          id: String(failedItem.customId || failedItem.id || failedItem.index),
+          url: failedItem.scopusUrl || failedItem.sourceUrl || '',
+          error: failedItem.status ? failedItem.status.replace(/^Gagal:\s*/i, '') : 'Gagal'
+        });
+        renderErrorBox();
       },
 
       onFinished: (summary) => {
@@ -363,6 +533,8 @@ document.addEventListener('DOMContentLoaded', () => {
         btnDashStart.disabled = false;
         btnDashStop.classList.add('hidden');
         if (btnDashSkip) btnDashSkip.classList.add('hidden');
+
+        renderErrorBox();
 
         // Show Retry button if there are failed URLs
         if (summary.failedCount > 0 && btnDashRetryFailed) {
@@ -438,4 +610,445 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   updateUrlCount();
+
+  // ========================================================
+  // MODE TABS SWITCHER (Scraper Link vs Konverter Folder PNG)
+  // ========================================================
+  const tabBtnScraper = document.getElementById('tabBtnScraper');
+  const tabBtnConverter = document.getElementById('tabBtnConverter');
+  const sidebarScraperPanel = document.getElementById('sidebarScraperPanel');
+  const sidebarConverterPanel = document.getElementById('sidebarConverterPanel');
+  const mainScraperBoard = document.getElementById('mainScraperBoard');
+  const mainConverterBoard = document.getElementById('mainConverterBoard');
+
+  if (tabBtnScraper && tabBtnConverter) {
+    tabBtnScraper.addEventListener('click', () => {
+      tabBtnScraper.classList.add('active');
+      tabBtnConverter.classList.remove('active');
+      if (sidebarScraperPanel) sidebarScraperPanel.classList.remove('hidden');
+      if (sidebarConverterPanel) sidebarConverterPanel.classList.add('hidden');
+      if (mainScraperBoard) mainScraperBoard.classList.remove('hidden');
+      if (mainConverterBoard) mainConverterBoard.classList.add('hidden');
+    });
+
+    tabBtnConverter.addEventListener('click', () => {
+      tabBtnConverter.classList.add('active');
+      tabBtnScraper.classList.remove('active');
+      if (sidebarScraperPanel) sidebarScraperPanel.classList.add('hidden');
+      if (sidebarConverterPanel) sidebarConverterPanel.classList.remove('hidden');
+      if (mainScraperBoard) mainScraperBoard.classList.add('hidden');
+      if (mainConverterBoard) mainConverterBoard.classList.remove('hidden');
+    });
+  }
+
+  // ========================================================
+  // LOGIKA KONVERTER FOLDER COVER KE PNG
+  // ========================================================
+  const btnPickFolder = document.getElementById('btnPickFolder');
+  const inputFolderFiles = document.getElementById('inputFolderFiles');
+  const btnPickFiles = document.getElementById('btnPickFiles');
+  const inputFileList = document.getElementById('inputFileList');
+  const convDropzoneArea = document.getElementById('convDropzoneArea');
+  const convTargetSubfolder = document.getElementById('convTargetSubfolder');
+  const convFileCountBadge = document.getElementById('convFileCountBadge');
+  const convStatTotal = document.getElementById('convStatTotal');
+  const convStatBreakdown = document.getElementById('convStatBreakdown');
+  const btnStartConvert = document.getElementById('btnStartConvert');
+  const btnStopConvert = document.getElementById('btnStopConvert');
+  const btnClearConvert = document.getElementById('btnClearConvert');
+
+  const convMetricTotal = document.getElementById('convMetricTotal');
+  const convMetricSuccess = document.getElementById('convMetricSuccess');
+  const convMetricFailed = document.getElementById('convMetricFailed');
+
+  const convProgressBox = document.getElementById('convProgressBox');
+  const convProgressStatus = document.getElementById('convProgressStatus');
+  const convProgressPercent = document.getElementById('convProgressPercent');
+  const convProgressBar = document.getElementById('convProgressBar');
+  const convLiveDetail = document.getElementById('convLiveDetail');
+
+  const convErrorBox = document.getElementById('convErrorBox');
+  const convErrorSummaryTitle = document.getElementById('convErrorSummaryTitle');
+  const convErrorNumberBadges = document.getElementById('convErrorNumberBadges');
+  const convErrorTableBody = document.getElementById('convErrorTableBody');
+  const btnConvCopyErrorNumbers = document.getElementById('btnConvCopyErrorNumbers');
+  const btnConvCopyErrorDetails = document.getElementById('btnConvCopyErrorDetails');
+  const convTableBody = document.getElementById('convTableBody');
+
+  let convSelectedFiles = [];
+  let convFailedItems = [];
+  let isConvCancelled = false;
+
+  function formatBytes(bytes) {
+    if (!bytes || bytes === 0) return '0 B';
+    const k = 1024;
+    const sizes = ['B', 'KB', 'MB', 'GB'];
+    const i = Math.floor(Math.log(bytes) / Math.log(k));
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+  }
+
+  // Trigger download helper
+  async function triggerDownloadFile(url, filename) {
+    return new Promise((resolve) => {
+      if (typeof chrome !== 'undefined' && chrome.runtime && chrome.runtime.sendMessage) {
+        chrome.runtime.sendMessage(
+          {
+            action: 'DOWNLOAD_FILE',
+            url: url,
+            filename: filename,
+            conflictAction: 'uniquify'
+          },
+          (response) => {
+            resolve(response);
+          }
+        );
+      } else {
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        resolve({ success: true });
+      }
+    });
+  }
+
+  // Handler saat file dipilih (dari input folder atau input files)
+  function handleFilesSelected(fileList) {
+    if (!fileList || fileList.length === 0) return;
+
+    // Filter file gambar atau PDF saja
+    const validExtensions = /\.(pdf|jpg|jpeg|png|gif|webp|bmp)$/i;
+    const files = Array.from(fileList).filter(f => validExtensions.test(f.name));
+
+    if (files.length === 0) {
+      alert('Tidak ditemukan berkas PDF atau gambar (JPG, GIF, PNG, WebP) di folder ini.');
+      return;
+    }
+
+    // Urutkan file berdasarkan angka/nomor di nama file secara natural (1, 2, 3... 10)
+    files.sort((a, b) => {
+      const numA = parseInt(a.name.match(/\d+/)?.[0] || '0', 10);
+      const numB = parseInt(b.name.match(/\d+/)?.[0] || '0', 10);
+      if (numA !== numB) return numA - numB;
+      return a.name.localeCompare(b.name, undefined, { numeric: true });
+    });
+
+    convSelectedFiles = files;
+    convFailedItems = [];
+    renderConvErrorBox();
+
+    // Hitung breakdown format
+    let countPdf = 0;
+    let countGif = 0;
+    let countJpg = 0;
+    files.forEach(f => {
+      const ext = (f.name.match(/\.([a-z0-9]+)$/i)?.[1] || '').toLowerCase();
+      if (ext === 'pdf') countPdf++;
+      else if (ext === 'gif') countGif++;
+      else countJpg++;
+    });
+
+    if (convFileCountBadge) convFileCountBadge.textContent = `${files.length} berkas`;
+    if (convStatTotal) convStatTotal.textContent = `${files.length} berkas`;
+    if (convStatBreakdown) {
+      convStatBreakdown.textContent = `PDF: ${countPdf} | GIF: ${countGif} | JPG/WebP: ${countJpg}`;
+    }
+    if (convMetricTotal) convMetricTotal.textContent = files.length;
+    if (convMetricSuccess) convMetricSuccess.textContent = '0';
+    if (convMetricFailed) convMetricFailed.textContent = '0';
+
+    if (btnStartConvert) btnStartConvert.disabled = false;
+
+    // Render tabel antrian berkas
+    if (convTableBody) {
+      convTableBody.innerHTML = '';
+      files.forEach((file, idx) => {
+        const numMatch = file.name.match(/^(\d+)/);
+        const fileId = numMatch ? numMatch[1] : String(idx + 1);
+        const ext = (file.name.match(/\.([a-z0-9]+)$/i)?.[1] || '').toUpperCase();
+        const tr = document.createElement('tr');
+        tr.id = `conv-row-${idx}`;
+        tr.innerHTML = `
+          <td><b>${escapeHtml(fileId)}</b></td>
+          <td>
+            <div class="cover-thumb-box" id="conv-thumb-${idx}">
+              <div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#94a3b8;font-size:10px;">
+                Antre
+              </div>
+            </div>
+          </td>
+          <td><span style="font-weight:600;">${escapeHtml(file.name)}</span></td>
+          <td><span class="badge">${ext}</span></td>
+          <td>${formatBytes(file.size)}</td>
+          <td><code>${escapeHtml(fileId)}.png</code></td>
+          <td id="conv-status-${idx}">
+            <span class="badge-status" style="background:#e2e8f0;color:#64748b;">Siap</span>
+          </td>
+        `;
+        convTableBody.appendChild(tr);
+      });
+    }
+  }
+
+  // Render Box Log Error Converter
+  function renderConvErrorBox() {
+    if (!convErrorBox) return;
+
+    if (convFailedItems.length === 0) {
+      convErrorBox.classList.add('hidden');
+      return;
+    }
+
+    convErrorBox.classList.remove('hidden');
+    if (convErrorSummaryTitle) {
+      convErrorSummaryTitle.textContent = `Terdeteksi ${convFailedItems.length} Berkas / Nomor Mengalami Kendala`;
+    }
+
+    if (convErrorNumberBadges) {
+      convErrorNumberBadges.innerHTML = '';
+      convFailedItems.forEach(item => {
+        const badge = document.createElement('span');
+        badge.className = 'badge-num-error';
+        badge.textContent = item.id;
+        badge.title = `Klik untuk salin nomor/ID: ${item.id}`;
+        badge.addEventListener('click', () => {
+          copyTextToClipboard(item.id, badge, '✓');
+        });
+        convErrorNumberBadges.appendChild(badge);
+      });
+    }
+
+    if (convErrorTableBody) {
+      convErrorTableBody.innerHTML = '';
+      convFailedItems.forEach(item => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td><b>${escapeHtml(item.id)}</b></td>
+          <td>${escapeHtml(item.name)}</td>
+          <td>${escapeHtml(item.size)}</td>
+          <td style="color:#b91c1c;font-weight:500;">${escapeHtml(item.error || 'Gagal')}</td>
+        `;
+        convErrorTableBody.appendChild(tr);
+      });
+    }
+  }
+
+  // Tombol Salin Nomor Saja Converter
+  if (btnConvCopyErrorNumbers) {
+    btnConvCopyErrorNumbers.addEventListener('click', () => {
+      if (convFailedItems.length === 0) return;
+      const text = convFailedItems.map(f => f.id).join(', ');
+      copyTextToClipboard(text, btnConvCopyErrorNumbers, '✓ Nomor Tersalin!');
+    });
+  }
+
+  // Tombol Salin Rincian Error Converter
+  if (btnConvCopyErrorDetails) {
+    btnConvCopyErrorDetails.addEventListener('click', () => {
+      if (convFailedItems.length === 0) return;
+      const text = convFailedItems.map(f => `${f.id}\t${f.name}\t${f.error}`).join('\n');
+      copyTextToClipboard(text, btnConvCopyErrorDetails, '✓ Rincian Tersalin!');
+    });
+  }
+
+  // Event listener tombol pilih folder & pilih files
+  if (btnPickFolder && inputFolderFiles) {
+    btnPickFolder.addEventListener('click', () => inputFolderFiles.click());
+    inputFolderFiles.addEventListener('change', (e) => handleFilesSelected(e.target.files));
+  }
+
+  if (btnPickFiles && inputFileList) {
+    btnPickFiles.addEventListener('click', () => inputFileList.click());
+    inputFileList.addEventListener('change', (e) => handleFilesSelected(e.target.files));
+  }
+
+  if (convDropzoneArea && inputFolderFiles) {
+    convDropzoneArea.addEventListener('click', () => inputFolderFiles.click());
+    convDropzoneArea.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      convDropzoneArea.style.borderColor = 'var(--primary)';
+      convDropzoneArea.style.background = '#f0f9ff';
+    });
+    convDropzoneArea.addEventListener('dragleave', () => {
+      convDropzoneArea.style.borderColor = 'var(--border)';
+      convDropzoneArea.style.background = '';
+    });
+    convDropzoneArea.addEventListener('drop', (e) => {
+      e.preventDefault();
+      convDropzoneArea.style.borderColor = 'var(--border)';
+      convDropzoneArea.style.background = '';
+      if (e.dataTransfer && e.dataTransfer.files) {
+        handleFilesSelected(e.dataTransfer.files);
+      }
+    });
+  }
+
+  // Reset Pilihan
+  if (btnClearConvert) {
+    btnClearConvert.addEventListener('click', () => {
+      convSelectedFiles = [];
+      convFailedItems = [];
+      if (inputFolderFiles) inputFolderFiles.value = '';
+      if (inputFileList) inputFileList.value = '';
+      if (convFileCountBadge) convFileCountBadge.textContent = '0 file';
+      if (convStatTotal) convStatTotal.textContent = '0 berkas';
+      if (convStatBreakdown) convStatBreakdown.textContent = 'PDF: 0 | GIF: 0 | JPG/WebP: 0';
+      if (convMetricTotal) convMetricTotal.textContent = '0';
+      if (convMetricSuccess) convMetricSuccess.textContent = '0';
+      if (convMetricFailed) convMetricFailed.textContent = '0';
+      if (btnStartConvert) btnStartConvert.disabled = true;
+      renderConvErrorBox();
+      if (convTableBody) {
+        convTableBody.innerHTML = `
+          <tr class="empty-row" id="convEmptyRow">
+            <td colspan="7">
+              <div class="empty-state" id="convDropzoneArea" style="cursor:pointer;padding:45px 20px;border:2px dashed var(--border);border-radius:12px;margin:20px;transition:all 0.15s ease;">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#025E8D" stroke-width="1.5">
+                  <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"></path>
+                  <polyline points="12 11 12 17"></polyline>
+                  <polyline points="9 14 12 11 15 14"></polyline>
+                </svg>
+                <p style="font-size:15px;margin-top:8px;"><b>Seret & Lepas Folder atau File Cover ke Sini</b></p>
+                <span style="color:var(--text-muted);">Atau gunakan tombol <b>"Pilih Folder Cover"</b> di sebelah kiri</span>
+              </div>
+            </td>
+          </tr>
+        `;
+      }
+    });
+  }
+
+  // Mulai Konversi ke PNG
+  if (btnStartConvert) {
+    btnStartConvert.addEventListener('click', async () => {
+      if (convSelectedFiles.length === 0) {
+        alert('Silakan pilih folder atau file cover terlebih dahulu.');
+        return;
+      }
+
+      isConvCancelled = false;
+      convFailedItems = [];
+      renderConvErrorBox();
+
+      btnStartConvert.disabled = true;
+      if (btnStopConvert) btnStopConvert.classList.remove('hidden');
+      if (convProgressBox) convProgressBox.classList.remove('hidden');
+
+      const targetSubfolder = (convTargetSubfolder ? convTargetSubfolder.value.trim() : '') || 'book-covers-png';
+      const total = convSelectedFiles.length;
+      let successCount = 0;
+      let failedCount = 0;
+
+      for (let i = 0; i < total; i++) {
+        if (isConvCancelled) break;
+
+        const file = convSelectedFiles[i];
+        const index = i + 1;
+        const percent = Math.round(((index - 1) / total) * 100);
+
+        const numMatch = file.name.match(/^(\d+)/);
+        const fileId = numMatch ? numMatch[1] : file.name.replace(/\.[^.]+$/, '');
+        const targetPngFilename = `${fileId}.png`;
+        const ext = (file.name.match(/\.([a-z0-9]+)$/i)?.[1] || '').toLowerCase();
+
+        if (convProgressBar) convProgressBar.style.width = `${percent}%`;
+        if (convProgressPercent) convProgressPercent.textContent = `${percent}%`;
+        if (convProgressStatus) convProgressStatus.textContent = `[${index}/${total}] Mengonversi: ${file.name}...`;
+        if (convLiveDetail) convLiveDetail.textContent = `File ${file.name} ➔ ${targetSubfolder}/${targetPngFilename}`;
+
+        const statusCell = document.getElementById(`conv-status-${i}`);
+        const thumbBox = document.getElementById(`conv-thumb-${i}`);
+        if (statusCell) {
+          statusCell.innerHTML = `<span class="badge-status" style="background:#fef3c7;color:#b45309;">Memproses...</span>`;
+        }
+
+        try {
+          let pngDataUrl = null;
+
+          if (ext === 'pdf') {
+            const arrayBuf = await file.arrayBuffer();
+            if (typeof renderPdfPageToPng === 'function') {
+              pngDataUrl = await renderPdfPageToPng(arrayBuf, { scale: 2.0, timeoutMs: 15000 });
+            } else {
+              throw new Error('Fungsi render PDF ke PNG tidak tersedia.');
+            }
+          } else {
+            // Gambar JPG / GIF / WebP / BMP / PNG
+            if (typeof convertImageToPng === 'function') {
+              pngDataUrl = await convertImageToPng(file, { timeoutMs: 12000 });
+            } else {
+              throw new Error('Fungsi konversi gambar ke PNG tidak tersedia.');
+            }
+          }
+
+          if (!pngDataUrl) {
+            throw new Error('Data URL hasil konversi kosong.');
+          }
+
+          // Trigger download hasil konversi PNG ke subfolder tujuan
+          await triggerDownloadFile(pngDataUrl, `${targetSubfolder}/${targetPngFilename}`);
+
+          // Perbarui tampilan status dan thumbnail di tabel
+          successCount++;
+          if (convMetricSuccess) convMetricSuccess.textContent = successCount;
+          if (statusCell) {
+            statusCell.innerHTML = `<span class="badge-status badge-success">Sukses</span>`;
+          }
+          if (thumbBox) {
+            thumbBox.innerHTML = `
+              <a href="${pngDataUrl}" target="_blank" title="Lihat Pratinjau PNG">
+                <img class="cover-thumb-img" src="${pngDataUrl}" alt="PNG">
+              </a>
+            `;
+          }
+
+        } catch (err) {
+          console.error(`Gagal mengonversi ${file.name}:`, err);
+          failedCount++;
+          if (convMetricFailed) convMetricFailed.textContent = failedCount;
+          if (statusCell) {
+            statusCell.innerHTML = `<span class="badge-status badge-error" title="${escapeHtml(err.message)}">Gagal</span>`;
+          }
+          if (thumbBox) {
+            thumbBox.innerHTML = `<div style="width:100%;height:100%;display:flex;align-items:center;justify-content:center;color:#ef4444;font-size:10px;font-weight:bold;">Error</div>`;
+          }
+
+          // Catat ke daftar error
+          convFailedItems.push({
+            id: fileId,
+            name: file.name,
+            size: formatBytes(file.size),
+            error: err.message || 'Gagal dikonversi'
+          });
+          renderConvErrorBox();
+        }
+
+        // Jeda kecil 120ms agar download Chrome berjalan stabil
+        await new Promise(r => setTimeout(r, 120));
+      }
+
+      // Selesai
+      btnStartConvert.disabled = false;
+      if (btnStopConvert) btnStopConvert.classList.add('hidden');
+      if (convProgressBar) convProgressBar.style.width = '100%';
+      if (convProgressPercent) convProgressPercent.textContent = '100%';
+      if (convProgressStatus) {
+        convProgressStatus.textContent = isConvCancelled
+          ? 'Konversi dihentikan oleh pengguna.'
+          : `Selesai! Berhasil: ${successCount} | Gagal: ${failedCount}`;
+      }
+      if (convLiveDetail) convLiveDetail.textContent = '';
+      renderConvErrorBox();
+    });
+  }
+
+  // Tombol Hentikan Konversi
+  if (btnStopConvert) {
+    btnStopConvert.addEventListener('click', () => {
+      isConvCancelled = true;
+      if (convProgressStatus) convProgressStatus.textContent = 'Menghentikan proses konversi...';
+    });
+  }
 });
