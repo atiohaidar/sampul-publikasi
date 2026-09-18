@@ -316,6 +316,11 @@ class TabAutomator {
                        a.href.includes('ieeexplore.ieee.org') ||
                        a.href.includes('sciencedirect.com') ||
                        a.href.includes('dl.acm.org') ||
+                       a.href.includes('spiedigitallibrary.org') ||
+                       a.href.includes('spie.org') ||
+                       a.href.includes('igi-global.com') ||
+                       a.href.includes('academic-conferences.org') ||
+                       a.href.includes('iopscience.iop.org') ||
                        a.href.includes('acm.org');
               });
 
@@ -1395,7 +1400,422 @@ class TabAutomator {
       }
 
       // ========================================================
-      // TAHAP 2D: Jika Publisher adalah SPRINGER
+      // TAHAP 2E: Jika Publisher adalah SPIE DIGITAL LIBRARY
+      // ========================================================
+      if (currentUrl.includes('spiedigitallibrary.org') || currentUrl.includes('spie.org') || currentUrl.includes('10.1117')) {
+        await this.waitForRobotVerification(tabId, onStatus);
+
+        if (!currentUrl.includes('.toc')) {
+          onStatus('Halaman Paper SPIE: Mencari link Proceeding Volume...');
+          const docData = await this.executeInTab(tabId, () => {
+            const procLink = document.querySelector(
+              'a[href*="/conference-proceedings-of-spie/"][href$=".toc"], .DetailStyles-module__headerDetailsLink___nGMdB, a[aria-label*="Volume link"]'
+            );
+            const titleEl = document.querySelector('h1, .DetailStyles-module__paperTitle___MpP__');
+            return {
+              proceedingUrl: procLink ? procLink.href : '',
+              paperTitle: titleEl ? titleEl.textContent.trim() : ''
+            };
+          });
+
+          if (docData && docData.paperTitle && !paperOrChapterTitle) {
+            paperOrChapterTitle = docData.paperTitle;
+          }
+
+          if (docData && docData.proceedingUrl) {
+            onStatus(`Membuka Proceeding SPIE: ${docData.proceedingUrl}...`);
+            await this.updateTabUrl(tabId, docData.proceedingUrl, activeTab);
+            await this.waitForTabLoad(tabId, timeoutMs);
+            await this.sleep(1500);
+
+            currentTab = await this.getTab(tabId);
+            currentUrl = (currentTab && currentTab.url) ? currentTab.url : docData.proceedingUrl;
+          }
+        }
+
+        onStatus('Halaman Proceeding SPIE: Mengekstrak metadata & cover...');
+        const spieData = await this.executeInTab(tabId, () => {
+          const confTitleEl = document.querySelector('.TocHeader-module__titleSlot___qafgr, .TocStyles-module__proceedingsVolumeNumberTitle___ho5AC, h1');
+          const confTitle = confTitleEl ? confTitleEl.textContent.trim() : '';
+
+          const bodyText = document.body ? document.body.textContent : '';
+          const yearMatch = bodyText.match(/(\b20\d{2}\b)/);
+          const year = yearMatch ? yearMatch[1] : '';
+
+          const frontItem = document.querySelector('[id*="FRONTMATTER"] ~ .TocStyles-module__paperItem___uGaLj, .TocStyles-module__paperItem___uGaLj');
+          let coverPdfUrl = '';
+          let coverTitle = '';
+          let coverArnumber = '';
+          if (frontItem) {
+            const titleLink = frontItem.querySelector('.TocStyles-module__paperTitle___MpP__ a, a[href*="Front-Matter"]');
+            if (titleLink) {
+              coverTitle = titleLink.textContent.trim();
+              const href = titleLink.getAttribute('href') || '';
+              const articleIdMatch = href.match(/\/(\d+)\/(\d+)\//);
+              if (articleIdMatch) {
+                coverArnumber = articleIdMatch[2];
+                coverPdfUrl = `https://www.spiedigitallibrary.org/conference-proceedings-of-spie/article-pdf/${articleIdMatch[1]}/${articleIdMatch[2]}/front-matter.pdf`;
+              } else if (href) {
+                coverPdfUrl = href.startsWith('http') ? href : ('https://www.spiedigitallibrary.org' + (href.startsWith('/') ? '' : '/') + href);
+              }
+            }
+          }
+
+          const imgEl = document.querySelector('.CoverWithLogo-module__coverWithLogoWrapper___QeLwn img, img[alt*="Cover of"], img[src*="Proceedings-Cover"]');
+          let coverImageUrl = imgEl ? (imgEl.getAttribute('src') || imgEl.src || '') : '';
+          if (coverImageUrl && !coverImageUrl.startsWith('http')) {
+            coverImageUrl = 'https://www.spiedigitallibrary.org' + (coverImageUrl.startsWith('/') ? '' : '/') + coverImageUrl;
+          }
+
+          return {
+            title: confTitle || 'SPIE Conference Proceeding',
+            coverTitle: coverTitle || 'Front Matter',
+            coverPdfUrl: coverPdfUrl,
+            coverImageUrl: coverImageUrl,
+            coverArnumber: coverArnumber,
+            year: year
+          };
+        });
+
+        if (!spieData || (!spieData.coverPdfUrl && !spieData.coverImageUrl && !spieData.title)) {
+          throw new Error('Gagal mengekstrak metadata dari SPIE Digital Library.');
+        }
+
+        const isPdf = !spieData.coverImageUrl && !!spieData.coverPdfUrl;
+
+        return {
+          publisherType: 'SPIE',
+          title: spieData.title,
+          chapterTitle: paperOrChapterTitle,
+          subtitle: spieData.coverTitle,
+          coverUrl: spieData.coverImageUrl || spieData.coverPdfUrl,
+          coverPdfUrl: spieData.coverPdfUrl,
+          isPdfCover: isPdf,
+          isbn: spieData.coverArnumber ? `SPIE-${spieData.coverArnumber}` : '',
+          doi: '',
+          year: spieData.year,
+          editors: 'SPIE',
+          series: 'SPIE Conference Proceedings',
+          publisher: 'SPIE Digital Library',
+          scopusUrl: scopusUrl,
+          bookUrl: currentUrl,
+          sourceUrl: currentUrl
+        };
+      }
+
+      // ========================================================
+      // TAHAP 2F: Jika Publisher adalah IGI GLOBAL
+      // ========================================================
+      if (currentUrl.includes('igi-global.com') || currentUrl.includes('10.4018')) {
+        await this.waitForRobotVerification(tabId, onStatus);
+        onStatus('Halaman IGI Global: Mengekstrak metadata buku & cover...');
+
+        const igiData = await this.executeInTab(tabId, () => {
+          const chapterTitleEl = document.querySelector('h1 span[id*="lblTitleName"], h1.bottom-space, h1');
+          const chapterTitle = chapterTitleEl ? chapterTitleEl.textContent.trim() : '';
+
+          const sourceLink = document.querySelector('span[id*="lblSource"] a[href*="/gateway/book/"], a[href*="/gateway/book/"], .bottom-space a[href*="/book/"]');
+          const bookTitle = sourceLink ? sourceLink.textContent.trim() : chapterTitle;
+          const bookUrl = sourceLink ? (sourceLink.href || '') : '';
+
+          const coverImg = document.querySelector('img[id*="imgCover"], img.cover-img-b, img[src*="coverimages.igi-global.com"], meta[property="og:image"]');
+          let coverUrl = '';
+          if (coverImg) {
+            coverUrl = coverImg.tagName.toLowerCase() === 'meta' ? (coverImg.getAttribute('content') || '') : (coverImg.getAttribute('src') || coverImg.src || '');
+          }
+          if (coverUrl && coverUrl.startsWith('//')) coverUrl = 'https:' + coverUrl;
+
+          const isbnEl = document.querySelector('.isbn-doi-inner-platform [title*="ISBN13"], span[title*="ISBN"]');
+          let isbn = '';
+          if (isbnEl) {
+            const rawIsbn = isbnEl.getAttribute('title') || isbnEl.textContent || '';
+            const m = rawIsbn.match(/(\d{13}|\d{10})/);
+            if (m) isbn = m[1];
+          }
+
+          const bodyText = document.body ? document.body.textContent : '';
+          const yMatch = bodyText.match(/©\s*(\d{4})|Copyright:?\s*©?\s*(\d{4})|(\b20\d{2}\b)/i);
+          const year = yMatch ? (yMatch[1] || yMatch[2] || yMatch[3]) : '';
+
+          return {
+            title: bookTitle || chapterTitle || 'IGI Global Book',
+            chapterTitle: chapterTitle,
+            bookUrl: bookUrl,
+            coverUrl: coverUrl,
+            isbn: isbn ? `ISBN-${isbn}` : '',
+            year: year
+          };
+        });
+
+        if (!igiData || (!igiData.coverUrl && !igiData.title)) {
+          throw new Error('Gagal mengekstrak metadata dari IGI Global.');
+        }
+
+        return {
+          publisherType: 'IGI Global',
+          title: igiData.title,
+          chapterTitle: paperOrChapterTitle || igiData.chapterTitle,
+          subtitle: '',
+          coverUrl: igiData.coverUrl,
+          coverFilename: '',
+          isbn: igiData.isbn,
+          doi: '',
+          year: igiData.year,
+          editors: 'IGI Global',
+          series: 'IGI Global Publishing',
+          publisher: 'IGI Global Scientific Publishing',
+          scopusUrl: scopusUrl,
+          bookUrl: igiData.bookUrl || currentUrl,
+          sourceUrl: currentUrl,
+          isPdfCover: false
+        };
+      }
+
+      // ========================================================
+      // TAHAP 2G: Jika Publisher adalah ACADEMIC CONFERENCES / PKP OJS
+      // ========================================================
+      if (currentUrl.includes('academic-conferences.org') || currentUrl.includes('/index.php/')) {
+        await this.waitForRobotVerification(tabId, onStatus);
+
+        const ojsScanFunc = () => {
+          const titleEl = document.querySelector('h1.page_title, h1, .item.title');
+          const paperTitle = titleEl ? titleEl.textContent.trim() : '';
+
+          const issueLink = document.querySelector('.item.issue a.title, .item.issue .value a, .item.cover_image a[href*="/issue/view/"]');
+          const issueTitle = issueLink ? issueLink.textContent.trim() : '';
+          const issueUrl = issueLink ? issueLink.href : '';
+
+          const coverImg = document.querySelector('.item.cover_image img, img[src*="cover_issue_"], .entry_details .cover_image img, meta[property="og:image"]');
+          let coverUrl = '';
+          if (coverImg) {
+            coverUrl = coverImg.tagName.toLowerCase() === 'meta' ? (coverImg.getAttribute('content') || '') : (coverImg.getAttribute('src') || coverImg.src || '');
+          }
+
+          const pubDateEl = document.querySelector('.item.published .value, .published .value');
+          let year = '';
+          if (pubDateEl) {
+            const m = pubDateEl.textContent.match(/\b(19\d\d|20\d\d)\b/);
+            if (m) year = m[1];
+          }
+          if (!year && issueTitle) {
+            const m = issueTitle.match(/\b(19\d\d|20\d\d)\b/);
+            if (m) year = m[1];
+          }
+
+          return {
+            paperTitle: paperTitle,
+            issueTitle: issueTitle,
+            issueUrl: issueUrl,
+            coverUrl: coverUrl,
+            year: year
+          };
+        };
+
+        let ojsData = await this.executeInTab(tabId, ojsScanFunc);
+
+        if (ojsData && ojsData.paperTitle && !paperOrChapterTitle) {
+          paperOrChapterTitle = ojsData.paperTitle;
+        }
+
+        if (ojsData && !ojsData.coverUrl && ojsData.issueUrl) {
+          onStatus(`Membuka Issue Induk Academic Conferences: ${ojsData.issueUrl}...`);
+          await this.updateTabUrl(tabId, ojsData.issueUrl, activeTab);
+          await this.waitForTabLoad(tabId, timeoutMs);
+          await this.sleep(1500);
+
+          currentTab = await this.getTab(tabId);
+          currentUrl = (currentTab && currentTab.url) ? currentTab.url : ojsData.issueUrl;
+
+          ojsData = await this.executeInTab(tabId, ojsScanFunc);
+        }
+
+        if (!ojsData || (!ojsData.coverUrl && !ojsData.issueTitle)) {
+          throw new Error('Gagal mengekstrak metadata dari Academic Conferences / OJS.');
+        }
+
+        return {
+          publisherType: 'Academic Conferences',
+          title: ojsData.issueTitle || ojsData.paperTitle || 'Academic Conferences Proceeding',
+          chapterTitle: paperOrChapterTitle || ojsData.paperTitle,
+          subtitle: '',
+          coverUrl: ojsData.coverUrl,
+          coverFilename: '',
+          isbn: '',
+          doi: '',
+          year: ojsData.year,
+          editors: 'Academic Conferences',
+          series: 'Academic Conferences Publishing',
+          publisher: 'Academic Conferences International',
+          scopusUrl: scopusUrl,
+          bookUrl: ojsData.issueUrl || currentUrl,
+          sourceUrl: currentUrl,
+          isPdfCover: false
+        };
+      }
+
+      // ========================================================
+      // TAHAP 2H: Jika Publisher adalah IOP PUBLISHING
+      // ========================================================
+      if (currentUrl.includes('iopscience.iop.org') || currentUrl.includes('10.1088')) {
+        await this.waitForRobotVerification(tabId, onStatus);
+
+        const iopScanFunc = () => {
+          const titleEl = document.querySelector('h1.article-title, .wd-jnl-art-title, h1');
+          const paperTitle = titleEl ? titleEl.textContent.trim() : '';
+
+          const seriesLink = document.querySelector('.wd-jnl-art-breadcrumb-title a, a[data-event-action="Title link"]');
+          const seriesTitle = seriesLink ? seriesLink.textContent.trim() : '';
+          const seriesUrl = seriesLink ? seriesLink.href : '';
+
+          const volLink = document.querySelector('.wd-jnl-art-breadcrumb-vol a, a[data-event-action="Volume link"]');
+          const volName = volLink ? volLink.textContent.trim() : '';
+
+          const coverImg = document.querySelector('#wd-jnl-hm-intro img, .pull-left img, img[src*="cms.iopscience.org"], img[src*="journal_cover"], meta[property="og:image"]');
+          let coverUrl = '';
+          if (coverImg) {
+            coverUrl = coverImg.tagName.toLowerCase() === 'meta' ? (coverImg.getAttribute('content') || '') : (coverImg.getAttribute('src') || coverImg.src || '');
+          }
+
+          const bodyText = document.body ? document.body.textContent : '';
+          const issnMatch = bodyText.match(/ISSN:?\s*([\d-]+)/i);
+          const issn = issnMatch ? issnMatch[1] : '';
+
+          const yMatch = bodyText.match(/Citation.*?\b(19\d\d|20\d\d)\b|©\s*(\d{4})|(\b20\d{2}\b)/i);
+          const year = yMatch ? (yMatch[1] || yMatch[2] || yMatch[3]) : '';
+
+          return {
+            paperTitle,
+            seriesTitle,
+            volName,
+            seriesUrl,
+            coverUrl,
+            issn,
+            year
+          };
+        };
+
+        let iopData = await this.executeInTab(tabId, iopScanFunc);
+
+        if (iopData && iopData.paperTitle && !paperOrChapterTitle) {
+          paperOrChapterTitle = iopData.paperTitle;
+        }
+
+        if (iopData && !iopData.coverUrl && iopData.seriesUrl) {
+          onStatus(`Membuka Jurnal/Series Induk IOP: ${iopData.seriesUrl}...`);
+          await this.updateTabUrl(tabId, iopData.seriesUrl, activeTab);
+          await this.waitForTabLoad(tabId, timeoutMs);
+          await this.sleep(1500);
+
+          currentTab = await this.getTab(tabId);
+          currentUrl = (currentTab && currentTab.url) ? currentTab.url : iopData.seriesUrl;
+
+          iopData = await this.executeInTab(tabId, iopScanFunc);
+        }
+
+        if (!iopData || (!iopData.coverUrl && !iopData.seriesTitle)) {
+          throw new Error('Gagal mengekstrak metadata dari IOP Publishing.');
+        }
+
+        const fullTitle = iopData.seriesTitle ? `${iopData.seriesTitle}${iopData.volName ? ' (' + iopData.volName + ')' : ''}` : 'IOP Conference Series';
+
+        return {
+          publisherType: 'IOP',
+          title: fullTitle,
+          chapterTitle: paperOrChapterTitle || iopData.paperTitle,
+          subtitle: iopData.volName || '',
+          coverUrl: iopData.coverUrl,
+          coverFilename: '',
+          isbn: iopData.issn ? `ISSN-${iopData.issn}` : '',
+          doi: '',
+          year: iopData.year,
+          editors: 'IOP Publishing',
+          series: iopData.seriesTitle || 'IOP Publishing',
+          publisher: 'IOP Publishing',
+          scopusUrl: scopusUrl,
+          bookUrl: iopData.seriesUrl || currentUrl,
+          sourceUrl: currentUrl,
+          isPdfCover: false
+        };
+      }
+
+      // ========================================================
+      // TAHAP 2I: Publisher Umum / Smart Fallback
+      // ========================================================
+      if (!currentUrl.includes('/chapter/') && !currentUrl.includes('/book/')) {
+        onStatus('Mencoba mengekstrak metadata publisher umum/fallback...');
+
+        const genericData = await this.executeInTab(tabId, () => {
+          const titleEl = document.querySelector('meta[property="og:title"]') ||
+                          document.querySelector('meta[name="citation_title"]') ||
+                          document.querySelector('h1');
+          let title = titleEl ? (titleEl.getAttribute('content') || titleEl.textContent || '').trim() : '';
+          if (!title) title = (document.title || '').split('|')[0].trim();
+
+          let coverUrl = '';
+          const coverImgCandidates = [
+            document.querySelector('img[id*="imgCover" i]'),
+            document.querySelector('img.cover-img-b'),
+            document.querySelector('.item.cover_image img'),
+            document.querySelector('.entry_details .cover_image img'),
+            document.querySelector('#wd-jnl-hm-intro img'),
+            document.querySelector('.publication-cover-image img'),
+            document.querySelector('img[src*="cover" i]'),
+            document.querySelector('img[alt*="cover" i]'),
+            document.querySelector('meta[property="og:image"]'),
+            document.querySelector('meta[name="twitter:image"]')
+          ];
+
+          for (const cand of coverImgCandidates) {
+            if (!cand) continue;
+            let src = cand.tagName.toLowerCase() === 'meta' ? (cand.getAttribute('content') || '') : (cand.getAttribute('src') || cand.src || '');
+            if (src && !src.includes('badge') && !src.includes('logo') && !src.includes('icon')) {
+              coverUrl = src;
+              break;
+            }
+          }
+
+          if (coverUrl && coverUrl.startsWith('//')) coverUrl = 'https:' + coverUrl;
+
+          const text = document.body ? document.body.textContent : '';
+          const yMatch = text.match(/©\s*(\d{4})|Copyright:?\s*©?\s*(\d{4})|(\b20\d{2}\b)/i);
+          const year = yMatch ? (yMatch[1] || yMatch[2] || yMatch[3]) : '';
+
+          const isbnMatch = text.match(/ISBN(?:-13)?:?\s*(\d{13}|\d{10})/i);
+          const isbn = isbnMatch ? isbnMatch[1] : '';
+
+          return {
+            title: title || 'Publisher Document',
+            coverUrl: coverUrl,
+            year: year,
+            isbn: isbn ? `ISBN-${isbn}` : ''
+          };
+        });
+
+        if (genericData && genericData.coverUrl) {
+          onStatus(`Ditemukan Cover Publisher: ${genericData.title}. Menyiapkan unduhan...`);
+          return {
+            publisherType: 'General',
+            title: genericData.title,
+            chapterTitle: paperOrChapterTitle,
+            subtitle: '',
+            coverUrl: genericData.coverUrl,
+            coverFilename: '',
+            isbn: genericData.isbn,
+            doi: '',
+            year: genericData.year,
+            editors: '',
+            series: 'General Publication',
+            publisher: 'General Publisher',
+            scopusUrl: scopusUrl,
+            bookUrl: currentUrl,
+            sourceUrl: currentUrl,
+            isPdfCover: false
+          };
+        }
+      }
+
+      // ========================================================
+      // TAHAP 2J: Jika Publisher adalah SPRINGER
       // ========================================================
       if (currentUrl.includes('/chapter/')) {
         onStatus('Halaman Chapter Springer: Mencari link Buku induk...');

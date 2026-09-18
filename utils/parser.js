@@ -194,8 +194,131 @@ function parseSpringerBookHtml(htmlString, sourceUrl = '') {
   };
 }
 
+/**
+ * Universal Smart Fallback Parser for any academic / book publisher page
+ */
+function parseGenericPublisherHtml(docOrHtml, sourceUrl = '') {
+  let doc = docOrHtml;
+  if (typeof docOrHtml === 'string') {
+    const parser = new DOMParser();
+    doc = parser.parseFromString(docOrHtml, 'text/html');
+  }
+
+  // 1. Title
+  let title = '';
+  const titleEl = doc.querySelector('meta[property="og:title"]') ||
+                  doc.querySelector('meta[name="citation_title"]') ||
+                  doc.querySelector('meta[name="title"]') ||
+                  doc.querySelector('h1');
+  if (titleEl) {
+    title = titleEl.getAttribute('content') || titleEl.textContent || '';
+    title = title.trim();
+  }
+  if (!title && doc.title) {
+    title = doc.title.split('|')[0].split('-')[0].trim();
+  }
+
+  // 2. Cover Image (Detecting various cover image conventions)
+  let coverUrl = '';
+  const coverImgCandidates = [
+    doc.querySelector('img[id*="imgCover" i]'),
+    doc.querySelector('img.cover-img-b'),
+    doc.querySelector('.item.cover_image img'),
+    doc.querySelector('.entry_details .cover_image img'),
+    doc.querySelector('#wd-jnl-hm-intro img'),
+    doc.querySelector('.pull-left img[src*="cover" i]'),
+    doc.querySelector('.publication-cover-image img'),
+    doc.querySelector('img[src*="cover" i]'),
+    doc.querySelector('img[alt*="cover" i]'),
+    doc.querySelector('meta[property="og:image"]'),
+    doc.querySelector('meta[name="twitter:image"]')
+  ];
+
+  for (const candidate of coverImgCandidates) {
+    if (!candidate) continue;
+    let src = '';
+    if (candidate.tagName && candidate.tagName.toLowerCase() === 'meta') {
+      src = candidate.getAttribute('content') || '';
+    } else {
+      src = candidate.getAttribute('src') || candidate.src || candidate.getAttribute('data-src') || '';
+    }
+    if (src && !src.includes('badge') && !src.includes('logo') && !src.includes('icon') && !src.includes('avatar')) {
+      coverUrl = src;
+      break;
+    }
+  }
+
+  if (coverUrl) {
+    if (coverUrl.startsWith('//')) {
+      coverUrl = 'https:' + coverUrl;
+    } else if (!coverUrl.startsWith('http') && sourceUrl) {
+      try {
+        const origin = new URL(sourceUrl).origin;
+        coverUrl = origin + (coverUrl.startsWith('/') ? '' : '/') + coverUrl;
+      } catch (e) {}
+    }
+  }
+
+  // 3. ISBN / DOI
+  let isbn = '';
+  const isbnMeta = doc.querySelector('meta[name="citation_isbn"]');
+  if (isbnMeta) isbn = isbnMeta.getAttribute('content') || '';
+  if (!isbn) {
+    const text = doc.body ? doc.body.textContent : '';
+    const match = text.match(/ISBN(?:-13)?:?\s*(\d{13}|\d{10}|\d{3}-\d-\d{3}-\d{5}-\d)/i);
+    if (match) isbn = match[1];
+  }
+
+  let doi = '';
+  const doiMeta = doc.querySelector('meta[name="citation_doi"]');
+  if (doiMeta) doi = doiMeta.getAttribute('content') || '';
+  if (!doi && sourceUrl) {
+    const match = sourceUrl.match(/10\.\d{4,9}\/[-._;()/:A-Za-z0-9]+/);
+    if (match) doi = match[0];
+  }
+
+  // 4. Year
+  let year = '';
+  const dateMeta = doc.querySelector('meta[name="citation_publication_date"]') ||
+                   doc.querySelector('meta[name="citation_date"]') ||
+                   doc.querySelector('meta[name="dc.date"]');
+  if (dateMeta) {
+    const match = (dateMeta.getAttribute('content') || '').match(/\b(19\d\d|20\d\d)\b/);
+    if (match) year = match[1];
+  }
+  if (!year) {
+    const text = doc.body ? doc.body.textContent : '';
+    const match = text.match(/©\s*(\d{4})|Copyright:?\s*©?\s*(\d{4})|(\b20\d{2}\b)/i);
+    if (match) year = match[1] || match[2] || match[3];
+  }
+
+  // 5. Publisher Name
+  let publisher = '';
+  const pubMeta = doc.querySelector('meta[name="citation_publisher"]') ||
+                  doc.querySelector('meta[property="og:site_name"]');
+  if (pubMeta) publisher = pubMeta.getAttribute('content') || '';
+  if (!publisher && sourceUrl) {
+    try {
+      publisher = new URL(sourceUrl).hostname.replace(/^www\./, '');
+    } catch (e) {}
+  }
+
+  return {
+    success: !!(coverUrl || title),
+    title: title || 'Publisher Document',
+    coverUrl: coverUrl || '',
+    isbn: isbn ? `ISBN-${isbn}` : '',
+    doi: doi,
+    year: year,
+    publisher: publisher || 'General Publisher',
+    sourceUrl: sourceUrl
+  };
+}
+
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { parseSpringerBookHtml };
+  module.exports = { parseSpringerBookHtml, parseGenericPublisherHtml };
 } else if (typeof window !== 'undefined') {
   window.parseSpringerBookHtml = parseSpringerBookHtml;
+  window.parseGenericPublisherHtml = parseGenericPublisherHtml;
 }
+
