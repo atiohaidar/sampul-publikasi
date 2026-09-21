@@ -73,28 +73,40 @@ async function renderPdfPageToJpeg(pdfDataOrUrl, { scale = 1.8, quality = 0.92, 
     });
 
     let pdfDoc = null;
+    let canvas = null;
     try {
       pdfDoc = await loadingTask.promise;
+      const page = await pdfDoc.getPage(1); // Ambil halaman pertama (Front Cover)
+      const viewport = page.getViewport({ scale: scale });
+
+      canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+      await page.render({
+        canvasContext: ctx,
+        viewport: viewport
+      }).promise;
+
+      const dataUrl = canvas.toDataURL('image/jpeg', quality);
+      return dataUrl;
     } catch (loadErr) {
-      try { loadingTask.destroy(); } catch (e) {}
       throw new Error(`Gagal membaca struktur PDF: ${loadErr.message}`);
+    } finally {
+      if (pdfDoc) {
+        try { pdfDoc.destroy(); } catch (e) {}
+      }
+      if (loadingTask) {
+        try { loadingTask.destroy(); } catch (e) {}
+      }
+      if (canvas) {
+        canvas.width = 0;
+        canvas.height = 0;
+        canvas = null;
+      }
+      pdfBuffer = null;
     }
-
-    const page = await pdfDoc.getPage(1); // Ambil halaman pertama (Front Cover)
-    const viewport = page.getViewport({ scale: scale });
-
-    const canvas = document.createElement('canvas');
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-
-    await page.render({
-      canvasContext: ctx,
-      viewport: viewport
-    }).promise;
-
-    const dataUrl = canvas.toDataURL('image/jpeg', quality);
-    return dataUrl;
   };
 
   return Promise.race([doRender(), overallTimeoutPromise]);
@@ -165,28 +177,40 @@ async function renderPdfPageToPng(pdfDataOrUrl, { scale = 2.0, timeoutMs = 12000
     });
 
     let pdfDoc = null;
+    let canvas = null;
     try {
       pdfDoc = await loadingTask.promise;
+      const page = await pdfDoc.getPage(1);
+      const viewport = page.getViewport({ scale: scale });
+
+      canvas = document.createElement('canvas');
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      const ctx = canvas.getContext('2d', { willReadFrequently: true });
+
+      await page.render({
+        canvasContext: ctx,
+        viewport: viewport
+      }).promise;
+
+      const pngDataUrl = canvas.toDataURL('image/png');
+      return pngDataUrl;
     } catch (loadErr) {
-      try { loadingTask.destroy(); } catch (e) {}
       throw new Error(`Gagal membaca struktur PDF: ${loadErr.message}`);
+    } finally {
+      if (pdfDoc) {
+        try { pdfDoc.destroy(); } catch (e) {}
+      }
+      if (loadingTask) {
+        try { loadingTask.destroy(); } catch (e) {}
+      }
+      if (canvas) {
+        canvas.width = 0;
+        canvas.height = 0;
+        canvas = null;
+      }
+      pdfBuffer = null;
     }
-
-    const page = await pdfDoc.getPage(1);
-    const viewport = page.getViewport({ scale: scale });
-
-    const canvas = document.createElement('canvas');
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
-
-    await page.render({
-      canvasContext: ctx,
-      viewport: viewport
-    }).promise;
-
-    const pngDataUrl = canvas.toDataURL('image/png');
-    return pngDataUrl;
   };
 
   return Promise.race([doRender(), overallTimeoutPromise]);
@@ -247,13 +271,17 @@ async function convertImageToPng(imageUrlOrData, { timeoutMs = 10000 } = {}) {
         img.src = blobUrl;
       });
 
-      const canvas = document.createElement('canvas');
+      let canvas = document.createElement('canvas');
       canvas.width = img.naturalWidth || img.width || 800;
       canvas.height = img.naturalHeight || img.height || 1200;
       const ctx = canvas.getContext('2d', { willReadFrequently: true });
 
       ctx.drawImage(img, 0, 0);
       const pngDataUrl = canvas.toDataURL('image/png');
+      canvas.width = 0;
+      canvas.height = 0;
+      canvas = null;
+      img.src = '';
       return pngDataUrl;
     } finally {
       if (needRevoke && blobUrl) {

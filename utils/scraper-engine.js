@@ -219,9 +219,7 @@ class SpringerScraperEngine {
               const pngDataUrl = await renderPdfPageToPng(bookData.coverPdfUrl, { scale: 2.0, timeoutMs: 12000 });
               if (pngDataUrl) {
                 await this.triggerDownload(pngDataUrl, `${targetSubfolderPng}/${pngFilename}`);
-                bookData.coverThumbnailUrl = pngDataUrl;
                 bookData.coverPngFilename = pngFilename;
-                bookData.coverPngDataUrl = pngDataUrl;
                 downloadedCoverName = `${pdfFilename} + ${targetSubfolderPng}/${pngFilename}`;
               }
             } catch (renderErr) {
@@ -235,7 +233,6 @@ class SpringerScraperEngine {
                 if (downloadCovers) {
                   await this.triggerDownload(jpgDataUrl, `${targetSubfolder}/${jpgFilename}`);
                 }
-                bookData.coverThumbnailUrl = jpgDataUrl;
               }
             } catch (renderErr) {
               console.warn('[Scraper] Melewati render JPG:', renderErr.message);
@@ -288,15 +285,12 @@ class SpringerScraperEngine {
 
               if (ext === '.png') {
                 await this.triggerDownload(bookData.coverUrl, `${targetSubfolderPng}/${pngFilename}`);
-                bookData.coverThumbnailUrl = bookData.coverUrl;
                 bookData.coverPngFilename = pngFilename;
               } else if (typeof convertImageToPng === 'function') {
                 const pngDataUrl = await convertImageToPng(bookData.coverUrl, { timeoutMs: 10000 });
                 if (pngDataUrl) {
                   await this.triggerDownload(pngDataUrl, `${targetSubfolderPng}/${pngFilename}`);
-                  bookData.coverThumbnailUrl = pngDataUrl;
                   bookData.coverPngFilename = pngFilename;
-                  bookData.coverPngDataUrl = pngDataUrl;
                   bookData.coverFilename = `${coverFilename} + ${targetSubfolderPng}/${pngFilename}`;
                 }
               }

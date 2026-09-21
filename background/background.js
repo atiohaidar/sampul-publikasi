@@ -10,13 +10,25 @@ chrome.runtime.onInstalled.addListener(() => {
 const pendingDownloadsById = new Map();
 const pendingDownloadsByUrl = new Map();
 
+const getStorageKey = (url, filename) => {
+  if (!url) return '';
+  if (url.length > 200) {
+    return url.substring(0, 100) + '_' + (filename || '');
+  }
+  return url;
+};
+
 // Pastikan nama file yang kita tentukan (misal: book-covers/1.pdf) tidak ditimpa
 // oleh server header (Content-Disposition) atau MIME handler bawaan Chrome
 if (chrome.downloads && chrome.downloads.onDeterminingFilename) {
   chrome.downloads.onDeterminingFilename.addListener((item, suggest) => {
+    const key = getStorageKey(item.url, item.filename);
+    const finalKey = getStorageKey(item.finalUrl, item.filename);
+
     const config = pendingDownloadsById.get(item.id) ||
+                   pendingDownloadsByUrl.get(key) ||
                    pendingDownloadsByUrl.get(item.url) ||
-                   pendingDownloadsByUrl.get(item.finalUrl);
+                   pendingDownloadsByUrl.get(finalKey);
 
     if (config && config.filename) {
       suggest({
@@ -24,8 +36,9 @@ if (chrome.downloads && chrome.downloads.onDeterminingFilename) {
         conflictAction: config.conflictAction || 'uniquify'
       });
       pendingDownloadsById.delete(item.id);
+      pendingDownloadsByUrl.delete(key);
       pendingDownloadsByUrl.delete(item.url);
-      if (item.finalUrl) pendingDownloadsByUrl.delete(item.finalUrl);
+      if (finalKey) pendingDownloadsByUrl.delete(finalKey);
       return;
     }
 
@@ -40,6 +53,15 @@ if (chrome.downloads && chrome.downloads.onDeterminingFilename) {
   });
 }
 
+// listener pembersihan memori otomatis setelah download selesai atau batal
+if (chrome.downloads && chrome.downloads.onChanged) {
+  chrome.downloads.onChanged.addListener((delta) => {
+    if (delta.state && (delta.state.current === 'complete' || delta.state.current === 'interrupted')) {
+      pendingDownloadsById.delete(delta.id);
+    }
+  });
+}
+
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === 'DOWNLOAD_FILE') {
     const { url, filename, conflictAction = 'uniquify' } = request;
@@ -49,7 +71,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       return true;
     }
 
-    pendingDownloadsByUrl.set(url, { filename, conflictAction });
+    const storageKey = getStorageKey(url, filename);
+    pendingDownloadsByUrl.set(storageKey, { filename, conflictAction });
 
     chrome.downloads.download(
       {
@@ -60,13 +83,18 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       },
       (downloadId) => {
         if (chrome.runtime.lastError) {
-          pendingDownloadsByUrl.delete(url);
+          pendingDownloadsByUrl.delete(storageKey);
           console.error('[Springer Scraper] Download failed:', chrome.runtime.lastError.message);
           sendResponse({ success: false, error: chrome.runtime.lastError.message });
         } else {
           if (downloadId) {
             pendingDownloadsById.set(downloadId, { filename, conflictAction });
           }
+          // Bersihkan storageKey dari pendingDownloadsByUrl secara otomatis setelah 2 detik
+          setTimeout(() => {
+            pendingDownloadsByUrl.delete(storageKey);
+          }, 2000);
+
           sendResponse({ success: true, downloadId: downloadId });
         }
       }
