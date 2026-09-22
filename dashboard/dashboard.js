@@ -612,34 +612,37 @@ document.addEventListener('DOMContentLoaded', () => {
   updateUrlCount();
 
   // ========================================================
-  // MODE TABS SWITCHER (Scraper Link vs Konverter Folder PNG)
+  // MODE TABS SWITCHER (Scraper Link vs Konverter PNG vs Penggabung CSV)
   // ========================================================
   const tabBtnScraper = document.getElementById('tabBtnScraper');
   const tabBtnConverter = document.getElementById('tabBtnConverter');
+  const tabBtnMerger = document.getElementById('tabBtnMerger');
+
   const sidebarScraperPanel = document.getElementById('sidebarScraperPanel');
   const sidebarConverterPanel = document.getElementById('sidebarConverterPanel');
+  const sidebarMergerPanel = document.getElementById('sidebarMergerPanel');
+
   const mainScraperBoard = document.getElementById('mainScraperBoard');
   const mainConverterBoard = document.getElementById('mainConverterBoard');
+  const mainMergerBoard = document.getElementById('mainMergerBoard');
 
-  if (tabBtnScraper && tabBtnConverter) {
-    tabBtnScraper.addEventListener('click', () => {
-      tabBtnScraper.classList.add('active');
-      tabBtnConverter.classList.remove('active');
-      if (sidebarScraperPanel) sidebarScraperPanel.classList.remove('hidden');
-      if (sidebarConverterPanel) sidebarConverterPanel.classList.add('hidden');
-      if (mainScraperBoard) mainScraperBoard.classList.remove('hidden');
-      if (mainConverterBoard) mainConverterBoard.classList.add('hidden');
-    });
+  function switchTabMode(activeTab) {
+    if (tabBtnScraper) tabBtnScraper.classList.toggle('active', activeTab === 'scraper');
+    if (tabBtnConverter) tabBtnConverter.classList.toggle('active', activeTab === 'converter');
+    if (tabBtnMerger) tabBtnMerger.classList.toggle('active', activeTab === 'merger');
 
-    tabBtnConverter.addEventListener('click', () => {
-      tabBtnConverter.classList.add('active');
-      tabBtnScraper.classList.remove('active');
-      if (sidebarScraperPanel) sidebarScraperPanel.classList.add('hidden');
-      if (sidebarConverterPanel) sidebarConverterPanel.classList.remove('hidden');
-      if (mainScraperBoard) mainScraperBoard.classList.add('hidden');
-      if (mainConverterBoard) mainConverterBoard.classList.remove('hidden');
-    });
+    if (sidebarScraperPanel) sidebarScraperPanel.classList.toggle('hidden', activeTab !== 'scraper');
+    if (sidebarConverterPanel) sidebarConverterPanel.classList.toggle('hidden', activeTab !== 'converter');
+    if (sidebarMergerPanel) sidebarMergerPanel.classList.toggle('hidden', activeTab !== 'merger');
+
+    if (mainScraperBoard) mainScraperBoard.classList.toggle('hidden', activeTab !== 'scraper');
+    if (mainConverterBoard) mainConverterBoard.classList.toggle('hidden', activeTab !== 'converter');
+    if (mainMergerBoard) mainMergerBoard.classList.toggle('hidden', activeTab !== 'merger');
   }
+
+  if (tabBtnScraper) tabBtnScraper.addEventListener('click', () => switchTabMode('scraper'));
+  if (tabBtnConverter) tabBtnConverter.addEventListener('click', () => switchTabMode('converter'));
+  if (tabBtnMerger) tabBtnMerger.addEventListener('click', () => switchTabMode('merger'));
 
   // ========================================================
   // LOGIKA KONVERTER FOLDER COVER KE PNG
@@ -1049,6 +1052,304 @@ document.addEventListener('DOMContentLoaded', () => {
     btnStopConvert.addEventListener('click', () => {
       isConvCancelled = true;
       if (convProgressStatus) convProgressStatus.textContent = 'Menghentikan proses konversi...';
+    });
+  }
+
+  // ========================================================
+  // LOGIKA PENGGABUNG CSV (CSV MERGER & COPY EXCEL)
+  // ========================================================
+  const btnPickCsvFiles = document.getElementById('btnPickCsvFiles');
+  const inputCsvFileList = document.getElementById('inputCsvFileList');
+  const mergerDropzoneArea = document.getElementById('mergerDropzoneArea');
+
+  const mergerStatFiles = document.getElementById('mergerStatFiles');
+  const mergerStatBreakdown = document.getElementById('mergerStatBreakdown');
+  const chkDeduplicateCsv = document.getElementById('chkDeduplicateCsv');
+  const chkSortCsv = document.getElementById('chkSortCsv');
+
+  const btnMergeCsv = document.getElementById('btnMergeCsv');
+  const btnDownloadMergedCsv = document.getElementById('btnDownloadMergedCsv');
+  const btnCopyMergedTableExcel = document.getElementById('btnCopyMergedTableExcel');
+  const btnClearMerger = document.getElementById('btnClearMerger');
+
+  const metricMergerFiles = document.getElementById('metricMergerFiles');
+  const metricMergerRows = document.getElementById('metricMergerRows');
+  const metricMergerDuplicates = document.getElementById('metricMergerDuplicates');
+  const btnBoardCopyExcel = document.getElementById('btnBoardCopyExcel');
+  const btnBoardExportCsv = document.getElementById('btnBoardExportCsv');
+
+  const mergerToastBanner = document.getElementById('mergerToastBanner');
+  const mergerTableHead = document.getElementById('mergerTableHead');
+  const mergerTableBody = document.getElementById('mergerTableBody');
+
+  let mergerSelectedFiles = [];
+  let mergedResultData = null;
+
+  function handleCsvFilesSelected(fileList) {
+    if (!fileList || fileList.length === 0) return;
+
+    const csvFiles = Array.from(fileList).filter(f => /\.csv$/i.test(f.name));
+    if (csvFiles.length === 0) {
+      alert('Silakan pilih berkas format CSV (.csv).');
+      return;
+    }
+
+    const fileReadPromises = csvFiles.map(file => {
+      return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          resolve({ name: file.name, content: e.target.result });
+        };
+        reader.onerror = () => resolve({ name: file.name, content: '' });
+        reader.readAsText(file);
+      });
+    });
+
+    Promise.all(fileReadPromises).then((readFiles) => {
+      mergerSelectedFiles = readFiles.filter(f => f.content && f.content.trim().length > 0);
+      
+      if (mergerStatFiles) mergerStatFiles.textContent = `${mergerSelectedFiles.length} file`;
+      if (mergerStatBreakdown) mergerStatBreakdown.textContent = `Siap digabungkan (${csvFiles.length} berkas CSV)`;
+      if (btnMergeCsv) btnMergeCsv.disabled = (mergerSelectedFiles.length === 0);
+      
+      // Jalankan penggabungan otomatis saat file dipilih
+      executeCsvMerge();
+    });
+  }
+
+  if (btnPickCsvFiles && inputCsvFileList) {
+    btnPickCsvFiles.addEventListener('click', () => inputCsvFileList.click());
+    inputCsvFileList.addEventListener('change', (e) => {
+      handleCsvFilesSelected(e.target.files);
+      e.target.value = '';
+    });
+  }
+
+  // Drag and drop CSV
+  if (mergerDropzoneArea) {
+    mergerDropzoneArea.addEventListener('click', () => {
+      if (inputCsvFileList) inputCsvFileList.click();
+    });
+
+    ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(evtName => {
+      document.body.addEventListener(evtName, (e) => {
+        if (tabBtnMerger && tabBtnMerger.classList.contains('active')) {
+          e.preventDefault();
+          e.stopPropagation();
+        }
+      });
+    });
+
+    mergerDropzoneArea.addEventListener('dragover', () => {
+      mergerDropzoneArea.style.borderColor = '#025E8D';
+      mergerDropzoneArea.style.background = '#f0f9ff';
+    });
+
+    mergerDropzoneArea.addEventListener('dragleave', () => {
+      mergerDropzoneArea.style.borderColor = 'var(--border)';
+      mergerDropzoneArea.style.background = 'transparent';
+    });
+
+    mergerDropzoneArea.addEventListener('drop', (e) => {
+      mergerDropzoneArea.style.borderColor = 'var(--border)';
+      mergerDropzoneArea.style.background = 'transparent';
+
+      const files = e.dataTransfer ? e.dataTransfer.files : [];
+      if (files && files.length > 0) {
+        handleCsvFilesSelected(files);
+      }
+    });
+  }
+
+  function executeCsvMerge() {
+    if (mergerSelectedFiles.length === 0) {
+      alert('Silakan pilih berkas CSV terlebih dahulu.');
+      return;
+    }
+
+    if (typeof mergeMultipleCsvFiles !== 'function') {
+      alert('Modul csv-merger.js tidak ditemukan.');
+      return;
+    }
+
+    const deduplicate = chkDeduplicateCsv ? chkDeduplicateCsv.checked : true;
+    const sortById = chkSortCsv ? chkSortCsv.checked : true;
+
+    mergedResultData = mergeMultipleCsvFiles(mergerSelectedFiles, { deduplicate, sortById });
+
+    if (metricMergerFiles) metricMergerFiles.textContent = mergedResultData.totalFiles;
+    if (metricMergerRows) metricMergerRows.textContent = mergedResultData.rows.length;
+    if (metricMergerDuplicates) metricMergerDuplicates.textContent = mergedResultData.removedDuplicatesCount;
+
+    if (btnDownloadMergedCsv) btnDownloadMergedCsv.disabled = (mergedResultData.rows.length === 0);
+    if (btnCopyMergedTableExcel) btnCopyMergedTableExcel.disabled = (mergedResultData.rows.length === 0);
+    if (btnBoardCopyExcel) btnBoardCopyExcel.disabled = (mergedResultData.rows.length === 0);
+    if (btnBoardExportCsv) btnBoardExportCsv.disabled = (mergedResultData.rows.length === 0);
+
+    renderMergerTable(mergedResultData);
+  }
+
+  function renderMergerTable(mergedData) {
+    if (!mergerTableBody) return;
+    const { headers, rows } = mergedData;
+
+    if (!headers || headers.length === 0 || rows.length === 0) {
+      mergerTableBody.innerHTML = `
+        <tr class="empty-row">
+          <td colspan="8" style="text-align:center;padding:30px;color:var(--text-muted);">
+            Tidak ada baris data yang ditemukan dalam berkas CSV.
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    // Render Table Head
+    if (mergerTableHead) {
+      mergerTableHead.innerHTML = `
+        <tr>
+          <th width="40">#</th>
+          ${headers.map(h => `<th>${escapeHtml(h)}</th>`).join('')}
+        </tr>
+      `;
+    }
+
+    // Render Table Body
+    mergerTableBody.innerHTML = '';
+    rows.forEach((row, idx) => {
+      const tr = document.createElement('tr');
+      const isFailed = (row['Status'] || '').toLowerCase().includes('gagal') ||
+                       (row['Judul Buku / Proceeding'] || '').includes('Gagal');
+
+      tr.innerHTML = `
+        <td><b>${idx + 1}</b></td>
+        ${headers.map(h => {
+          const val = row[h] !== undefined && row[h] !== null ? row[h] : '';
+          if (h === 'Link Scopus' || h === 'Link Publisher') {
+            return val ? `<td><a href="${escapeHtml(val)}" target="_blank" style="color:var(--primary);font-size:12px;">Link 🔗</a></td>` : '<td>-</td>';
+          }
+          if (h === 'Status') {
+            const badgeClass = isFailed ? 'badge-error' : 'badge-success';
+            return `<td><span class="badge-status ${badgeClass}">${escapeHtml(val)}</span></td>`;
+          }
+          return `<td>${escapeHtml(val)}</td>`;
+        }).join('')}
+      `;
+      mergerTableBody.appendChild(tr);
+    });
+  }
+
+  // Action Button: Gabungkan CSV
+  if (btnMergeCsv) {
+    btnMergeCsv.addEventListener('click', executeCsvMerge);
+  }
+
+  // Action Button: Download Merged CSV
+  function downloadMergedCsvFile() {
+    if (!mergedResultData || mergedResultData.rows.length === 0) {
+      alert('Belum ada data gabungan untuk diunduh.');
+      return;
+    }
+    const csvContent = convertTableToCsvString(mergedResultData.headers, mergedResultData.rows);
+    downloadCsvString(csvContent, 'hasil_penggabungan_metadata.csv');
+  }
+
+  function downloadCsvString(csvContent, filename) {
+    const blob = new Blob(['\uFEFF' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  if (btnDownloadMergedCsv) btnDownloadMergedCsv.addEventListener('click', downloadMergedCsvFile);
+  if (btnBoardExportCsv) btnBoardExportCsv.addEventListener('click', downloadMergedCsvFile);
+
+  // Action Button: SALIN TABEL KE EXCEL (CLIPBOARD)
+  function copyTableToExcelClipboard() {
+    if (!mergedResultData || mergedResultData.rows.length === 0) {
+      alert('Belum ada data gabungan untuk disalin.');
+      return;
+    }
+
+    const tsvData = convertTableToExcelClipboardString(mergedResultData.headers, mergedResultData.rows);
+    
+    navigator.clipboard.writeText(tsvData).then(() => {
+      if (mergerToastBanner) {
+        mergerToastBanner.classList.remove('hidden');
+        setTimeout(() => {
+          mergerToastBanner.classList.add('hidden');
+        }, 4000);
+      } else {
+        alert('✅ Tabel berhasil disalin ke Clipboard! Siap ditempel (Ctrl + V) di Excel.');
+      }
+    }).catch(err => {
+      console.error('Gagal menyalin tabel ke clipboard:', err);
+      // Fallback menggunakan textarea
+      const ta = document.createElement('textarea');
+      ta.value = tsvData;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      alert('✅ Tabel berhasil disalin ke Clipboard!');
+    });
+  }
+
+  if (btnCopyMergedTableExcel) btnCopyMergedTableExcel.addEventListener('click', copyTableToExcelClipboard);
+  if (btnBoardCopyExcel) btnBoardCopyExcel.addEventListener('click', copyTableToExcelClipboard);
+
+  // Reset Merger
+  if (btnClearMerger) {
+    btnClearMerger.addEventListener('click', () => {
+      mergerSelectedFiles = [];
+      mergedResultData = null;
+      if (mergerStatFiles) mergerStatFiles.textContent = '0 file';
+      if (mergerStatBreakdown) mergerStatBreakdown.textContent = 'Siap digabungkan';
+      if (metricMergerFiles) metricMergerFiles.textContent = '0';
+      if (metricMergerRows) metricMergerRows.textContent = '0';
+      if (metricMergerDuplicates) metricMergerDuplicates.textContent = '0';
+
+      if (btnMergeCsv) btnMergeCsv.disabled = true;
+      if (btnDownloadMergedCsv) btnDownloadMergedCsv.disabled = true;
+      if (btnCopyMergedTableExcel) btnCopyMergedTableExcel.disabled = true;
+      if (btnBoardCopyExcel) btnBoardCopyExcel.disabled = true;
+      if (btnBoardExportCsv) btnBoardExportCsv.disabled = true;
+
+      if (mergerTableHead) {
+        mergerTableHead.innerHTML = `
+          <tr>
+            <th width="40">#</th>
+            <th width="50">ID</th>
+            <th>Judul Buku / Proceeding</th>
+            <th>Judul Artikel / Chapter</th>
+            <th width="120">ISBN / ISSN</th>
+            <th width="60">Tahun</th>
+            <th width="150">Publisher</th>
+            <th width="180">Link Scopus</th>
+          </tr>
+        `;
+      }
+      if (mergerTableBody) {
+        mergerTableBody.innerHTML = `
+          <tr class="empty-row" id="mergerEmptyRow">
+            <td colspan="8">
+              <div class="empty-state" id="mergerDropzoneArea" style="cursor:pointer;padding:45px 20px;border:2px dashed var(--border);border-radius:12px;margin:20px;transition:all 0.15s ease;">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#025E8D" stroke-width="1.5">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14 2 14 8 20 8"></polyline>
+                </svg>
+                <p style="font-size:15px;margin-top:8px;"><b>Seret & Lepas Beberapa File CSV ke Sini</b></p>
+                <span style="color:var(--text-muted);">Atau gunakan tombol <b>"Pilih Berkas CSV"</b> di sebelah kiri untuk menggabungkan</span>
+              </div>
+            </td>
+          </tr>
+        `;
+      }
     });
   }
 });

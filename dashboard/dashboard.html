@@ -28,6 +28,9 @@
           <button id="tabBtnConverter" class="mode-tab-btn" type="button">
             📁 Konversi Folder PNG
           </button>
+          <button id="tabBtnMerger" class="mode-tab-btn" type="button">
+            📊 Penggabung CSV
+          </button>
         </div>
       </div>
 
@@ -198,6 +201,61 @@
             </button>
             <button id="btnClearConvert" class="btn-sm btn-ghost-danger" type="button" style="width:100%;margin-top:4px;">
               Reset Pilihan Berkas
+            </button>
+          </div>
+        </div>
+
+        <!-- TAB 3: Panel Penggabung CSV -->
+        <div id="sidebarMergerPanel" class="sidebar-tab-content hidden">
+          <div class="panel-box">
+            <h3 class="panel-title">Pilih File CSV yang Ingin Digabung</h3>
+            <p style="font-size:11px;color:var(--text-muted);margin:4px 0 8px 0;line-height:1.4;">
+              Pilih beberapa berkas CSV hasil scraper sebelumnya untuk digabungkan menjadi 1 file & 1 tabel utuh.
+            </p>
+            <div style="display:flex;flex-direction:column;gap:8px;">
+              <button id="btnPickCsvFiles" class="btn-primary" type="button" style="justify-content:center;background:#025e8d;">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                  <polyline points="14 2 14 8 20 8"></polyline>
+                </svg>
+                <span>Pilih Berkas CSV (.csv)</span>
+              </button>
+              <input type="file" id="inputCsvFileList" multiple accept=".csv" style="display:none;">
+            </div>
+            <div style="background:#f1f5f9;padding:10px 12px;border-radius:6px;font-size:11px;border:1px solid var(--border);margin-top:10px;">
+              <div><b>Total File Terpilih:</b> <span id="mergerStatFiles">0 file</span></div>
+              <div style="color:var(--text-muted);font-size:10px;margin-top:3px;" id="mergerStatBreakdown">
+                Siap digabungkan
+              </div>
+            </div>
+          </div>
+
+          <div class="panel-box">
+            <h3 class="panel-title">Opsi Penggabungan</h3>
+            <div class="form-checkboxes">
+              <label class="chk-label" style="font-weight: 600; color: #025e8d;">
+                <input type="checkbox" id="chkDeduplicateCsv" checked>
+                <span>Hapus Duplikat (Gagal Dibuang, Berhasil Diprioritaskan)</span>
+              </label>
+              <label class="chk-label" style="font-weight: 600; color: #059669;">
+                <input type="checkbox" id="chkSortCsv" checked>
+                <span>Urutkan Rapi Berdasarkan Nomor / ID</span>
+              </label>
+            </div>
+          </div>
+
+          <div class="action-panel">
+            <button id="btnMergeCsv" class="btn-primary" type="button" style="background:#025e8d;" disabled>
+              <span>📊 Gabungkan CSV</span>
+            </button>
+            <button id="btnDownloadMergedCsv" class="btn-secondary" type="button" style="width:100%;margin-top:6px;" disabled>
+              <span>📥 Download CSV Gabungan</span>
+            </button>
+            <button id="btnCopyMergedTableExcel" class="btn-secondary" type="button" style="width:100%;margin-top:6px;background:#f0fdf4;border-color:#bbf7d0;color:#15803d;font-weight:700;" disabled>
+              <span>📋 Salin Tabel (Siap Paste di Excel)</span>
+            </button>
+            <button id="btnClearMerger" class="btn-sm btn-ghost-danger" type="button" style="width:100%;margin-top:6px;">
+              Reset Penggabung
             </button>
           </div>
         </div>
@@ -460,6 +518,75 @@
           </div>
         </section>
       </div>
+
+      <!-- TAB 3: Main Board Penggabung CSV -->
+      <div id="mainMergerBoard" class="main-tab-content hidden">
+        <section class="metrics-bar">
+          <div class="metric-card">
+            <span class="m-label">Total File CSV</span>
+            <span class="m-val" id="metricMergerFiles">0</span>
+          </div>
+          <div class="metric-card metric-success">
+            <span class="m-label">Total Baris Tergabung</span>
+            <span class="m-val" id="metricMergerRows">0</span>
+          </div>
+          <div class="metric-card metric-failed">
+            <span class="m-label">Duplikat Dibuang</span>
+            <span class="m-val" id="metricMergerDuplicates">0</span>
+          </div>
+          <div class="metric-actions" style="display:flex;gap:8px;">
+            <button id="btnBoardCopyExcel" class="btn-outline" style="color:#15803d;border-color:#bbf7d0;background:#f0fdf4;font-weight:700;" disabled>
+              <span>📋 Salin Tabel (Format Excel)</span>
+            </button>
+            <button id="btnBoardExportCsv" class="btn-outline" disabled>
+              <span>📥 Download Merged CSV</span>
+            </button>
+          </div>
+        </section>
+
+        <!-- Notification Toast Banner ketika disalin -->
+        <div id="mergerToastBanner" class="progress-box hidden" style="background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;margin-bottom:16px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;width:100%;">
+            <div style="font-weight:700;font-size:13px;display:flex;align-items:center;gap:8px;">
+              <span>✅ Tabel berhasil disalin ke Clipboard!</span>
+              <span style="font-weight:normal;color:#15803d;">Buka Excel atau Google Sheets lalu tekan Ctrl + V untuk menempelkan data.</span>
+            </div>
+          </div>
+        </div>
+
+        <section class="table-container">
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead id="mergerTableHead">
+                <tr>
+                  <th width="40">#</th>
+                  <th width="50">ID</th>
+                  <th>Judul Buku / Proceeding</th>
+                  <th>Judul Artikel / Chapter</th>
+                  <th width="120">ISBN / ISSN</th>
+                  <th width="60">Tahun</th>
+                  <th width="150">Publisher</th>
+                  <th width="180">Link Scopus</th>
+                </tr>
+              </thead>
+              <tbody id="mergerTableBody">
+                <tr class="empty-row" id="mergerEmptyRow">
+                  <td colspan="8">
+                    <div class="empty-state" id="mergerDropzoneArea" style="cursor:pointer;padding:45px 20px;border:2px dashed var(--border);border-radius:12px;margin:20px;transition:all 0.15s ease;">
+                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#025E8D" stroke-width="1.5">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14 2 14 8 20 8"></polyline>
+                      </svg>
+                      <p style="font-size:15px;margin-top:8px;"><b>Seret & Lepas Beberapa File CSV ke Sini</b></p>
+                      <span style="color:var(--text-muted);">Atau gunakan tombol <b>"Pilih Berkas CSV"</b> di sebelah kiri untuk menggabungkan</span>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
     </main>
   </div>
 
@@ -477,6 +604,7 @@
   <script src="../utils/pdf-to-image.js"></script>
   <script src="../utils/tab-automator.js"></script>
   <script src="../utils/csv-exporter.js"></script>
+  <script src="../utils/csv-merger.js"></script>
   <script src="../utils/scraper-engine.js"></script>
   <script src="dashboard.js"></script>
 </body>
