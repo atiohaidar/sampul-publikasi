@@ -486,13 +486,16 @@ function extractGenericPublicationMetadata(docOrHtml, { doi = '', sourceUrl = ''
     }
   }
 
-  // Cari ISBN umum lainnya di teks
-  const allIsbnMatches = bodyText.match(/\b(?:ISBN(?:-13|-10)?[\s:]*)?([0-9]{3}[-\s]?[0-9][-\s]?[0-9]{2,5}[-\s]?[0-9]{2,7}[-\s]?[0-9Xx]|[0-9]{13}|[0-9]{10})\b/gi);
+  // Cari ISBN umum lainnya di teks hanya jika ada awalan kata ISBN eksplisit
+  const allIsbnMatches = bodyText.match(/\bISBN(?:-13|-10)?[\s:]+([0-9-]{10,17}[0-9Xx])\b/gi);
   if (allIsbnMatches) {
     allIsbnMatches.forEach(m => {
-      const clean = sanitizeIsbn(m);
-      if (isValidIsbn(clean) && !rawIsbns.includes(clean)) {
-        rawIsbns.push(clean);
+      const matchOnly = m.match(/([0-9-]{10,17}[0-9Xx])/);
+      if (matchOnly && isValidIsbn(matchOnly[1])) {
+        const clean = sanitizeIsbn(matchOnly[1]);
+        if (!rawIsbns.includes(clean)) {
+          rawIsbns.push(clean);
+        }
       }
     });
   }

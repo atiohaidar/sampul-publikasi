@@ -523,16 +523,17 @@ class TabAutomator {
         }
 
         // JIKA MODE METADATA ONLY (Cepat / Tanpa Cover):
-        // Jika Scopus sudah menyediakan data 100% LENGKAP (kedua ISBN Elec & Print ada DAN City ada),
+        // Jika Scopus sudah menyediakan data ISBN (Elec/Print) DAN Lokasi Konferensi (City),
         // ATAU jika memang TIDAK ADA link publisher untuk dituju:
-        const hasCompleteScopusMeta = (scopusMeta.isbnElectronic && scopusMeta.isbnPrint && scopusMeta.city);
+        const hasScopusIsbn = Boolean(scopusMeta.isbnElectronic || scopusMeta.isbnPrint);
+        const hasCompleteScopusMeta = hasScopusIsbn && Boolean(scopusMeta.city);
         const hasPublisherLink = Boolean(scopusResult && scopusResult.publisherUrl);
 
         if (metadataOnly) {
           if (hasCompleteScopusMeta || !hasPublisherLink) {
-            onStatus(`Scopus: Selesai mengambil metadata dari Scopus (ISBN Elec: ${scopusMeta.isbnElectronic || '-'}, Print: ${scopusMeta.isbnPrint || '-'}, Lokasi: ${scopusMeta.city || '-'}).`);
+            onStatus(`Scopus: Metadata lengkap dari Scopus (ISBN Elec: ${scopusMeta.isbnElectronic || '-'}, Print: ${scopusMeta.isbnPrint || '-'}, Lokasi: ${scopusMeta.city || '-'}).`);
             return {
-              publisherType: 'Scopus',
+              publisherType: scopusMeta.publisher || 'Scopus',
               title: (scopusResult && scopusResult.paperTitle) || scopusMeta.sourceTitle || paperOrChapterTitle || '',
               chapterTitle: (scopusResult && scopusResult.paperTitle) || '',
               publisher: scopusMeta.publisher || 'Scopus',
@@ -549,7 +550,7 @@ class TabAutomator {
               coverFilename: 'Tanpa Cover (Mode Cepat)'
             };
           } else {
-            onStatus(`Scopus: Data di Scopus hanya 1 ISBN. Mengarahkan ke penerbit (${scopusResult.publisherUrl}) untuk melengkapi data...`);
+            onStatus(`Scopus: Menuju penerbit (${scopusResult.publisherUrl}) untuk melengkapi lokasi/detail prosiding...`);
           }
         }
 
@@ -2136,13 +2137,13 @@ class TabAutomator {
               genParsedMeta = extractGenericPublicationMetadata(genericData.html, { sourceUrl: currentUrl, doi: scopusMeta.doi });
             } catch (e) {}
           }
-          const finalIsbnElec = genParsedMeta.isbnElectronic || scopusMeta.isbnElectronic || '';
-          const finalIsbnPrint = genParsedMeta.isbnPrint || scopusMeta.isbnPrint || '';
-          const finalCity = genParsedMeta.city || scopusMeta.city || '';
-          const finalIsbn = finalIsbnElec || finalIsbnPrint || (genericData.isbn && typeof isValidIsbn === 'function' && isValidIsbn(genericData.isbn) ? genericData.isbn : '');
+          const finalIsbnElec = scopusMeta.isbnElectronic || genParsedMeta.isbnElectronic || '';
+          const finalIsbnPrint = scopusMeta.isbnPrint || genParsedMeta.isbnPrint || '';
+          const finalCity = scopusMeta.city || genParsedMeta.city || '';
+          const finalIsbn = finalIsbnElec || finalIsbnPrint || (scopusMeta.isbn || '') || (genericData.isbn && typeof isValidIsbn === 'function' && isValidIsbn(genericData.isbn) ? genericData.isbn : '');
 
           return {
-            publisherType: genParsedMeta.publisher || scopusMeta.publisher || 'General',
+            publisherType: scopusMeta.publisher || genParsedMeta.publisher || 'General',
             title: genericData.title || scopusMeta.sourceTitle || paperOrChapterTitle,
             chapterTitle: paperOrChapterTitle,
             subtitle: '',
@@ -2152,11 +2153,11 @@ class TabAutomator {
             isbnPrint: finalIsbnPrint,
             city: finalCity,
             isbn: finalIsbn,
-            doi: genParsedMeta.doi || scopusMeta.doi || '',
+            doi: scopusMeta.doi || genParsedMeta.doi || '',
             year: genericData.year || scopusMeta.year || '',
             editors: '',
             series: 'General Publication',
-            publisher: genParsedMeta.publisher || scopusMeta.publisher || 'General Publisher',
+            publisher: scopusMeta.publisher || genParsedMeta.publisher || 'General Publisher',
             scopusUrl: scopusUrl,
             bookUrl: currentUrl,
             sourceUrl: currentUrl,
