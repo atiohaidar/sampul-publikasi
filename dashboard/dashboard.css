@@ -198,6 +198,66 @@ textarea:focus {
   background: #fef2f2;
 }
 
+/* Mode Scraping Cards in Dashboard */
+.dash-mode-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.dash-mode-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  background: #ffffff;
+  border: 1.5px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  user-select: none;
+}
+
+.dash-mode-card:hover {
+  border-color: #94a3b8;
+  background: #f8fafc;
+}
+
+.dash-mode-card:has(input:checked) {
+  border-color: var(--primary);
+  background: #f0f9ff;
+  box-shadow: 0 0 0 1px var(--primary);
+}
+
+.dash-mode-card input[type="radio"] {
+  margin-top: 3px;
+  accent-color: var(--primary);
+  flex-shrink: 0;
+  cursor: pointer;
+}
+
+.dash-mode-info {
+  display: flex;
+  flex-direction: column;
+}
+
+.dash-mode-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dash-mode-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.35;
+  margin-top: 2px;
+}
+
 .form-item {
   display: flex;
   flex-direction: column;

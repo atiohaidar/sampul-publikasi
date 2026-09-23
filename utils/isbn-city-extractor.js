@@ -177,10 +177,14 @@ function parseIsbnDetails(rawStringOrArray, { doi = '' } = {}) {
  * Mendukung pembacaan dari Flyout "Detailed information", Bibliographic info, meta tags, atau __NEXT_DATA__ di halaman Scopus.
  */
 function extractScopusMetadata(docOrHtml) {
-  let doc = docOrHtml;
-  if (typeof docOrHtml === 'string') {
-    const parser = new DOMParser();
-    doc = parser.parseFromString(docOrHtml, 'text/html');
+  let doc = null;
+  if (typeof docOrHtml === 'object' && docOrHtml !== null) {
+    doc = docOrHtml;
+  } else if (typeof docOrHtml === 'string' && typeof DOMParser !== 'undefined') {
+    try {
+      const parser = new DOMParser();
+      doc = parser.parseFromString(docOrHtml, 'text/html');
+    } catch (e) {}
   }
 
   let rawIsbnText = '';
@@ -189,79 +193,83 @@ function extractScopusMetadata(docOrHtml) {
   let doi = '';
   let sourceTitle = '';
 
-  // 1. Ekstrak dari Elemen Scopus Flyout / Detailed Information
-  const isbnEl = doc.querySelector('[data-testid="source-info-isbn"], [data-testid="document-info-isbn"]');
-  if (isbnEl) {
-    rawIsbnText = isbnEl.textContent.trim();
-  }
+  // 1. Ekstrak dari Elemen Scopus Flyout / Detailed Information jika ada DOM
+  if (doc && typeof doc.querySelector === 'function') {
+    const isbnEl = doc.querySelector('[data-testid="source-info-isbn"], [data-testid="document-info-isbn"]');
+    if (isbnEl) {
+      rawIsbnText = isbnEl.textContent.trim();
+    }
 
-  if (!rawIsbnText) {
-    const dts = doc.querySelectorAll('dl div dt, dl dt');
-    for (const dt of dts) {
-      const label = dt.textContent.trim().toLowerCase();
-      const dd = dt.nextElementSibling || dt.parentElement.querySelector('dd');
-      if (label === 'isbn' && dd) {
-        rawIsbnText = dd.textContent.trim();
-        break;
+    if (!rawIsbnText) {
+      const dts = doc.querySelectorAll('dl div dt, dl dt');
+      for (const dt of dts) {
+        const label = dt.textContent.trim().toLowerCase();
+        const dd = dt.nextElementSibling || dt.parentElement.querySelector('dd');
+        if (label === 'isbn' && dd) {
+          rawIsbnText = dd.textContent.trim();
+          break;
+        }
       }
     }
-  }
 
-  if (!rawIsbnText) {
-    const isbnMeta = doc.querySelector('meta[name="citation_isbn"]');
-    if (isbnMeta) rawIsbnText = isbnMeta.getAttribute('content') || '';
-  }
+    if (!rawIsbnText) {
+      const isbnMeta = doc.querySelector('meta[name="citation_isbn"]');
+      if (isbnMeta) rawIsbnText = isbnMeta.getAttribute('content') || '';
+    }
 
-  // 2. Ekstrak DOI dari Scopus
-  const doiEl = doc.querySelector('[data-testid="document-info-doi"]');
-  if (doiEl) {
-    doi = doiEl.textContent.trim();
-  }
-  if (!doi) {
-    const doiMeta = doc.querySelector('meta[name="citation_doi"]');
-    if (doiMeta) doi = doiMeta.getAttribute('content') || '';
-  }
+    // 2. Ekstrak DOI dari Scopus
+    const doiEl = doc.querySelector('[data-testid="document-info-doi"]');
+    if (doiEl) {
+      doi = doiEl.textContent.trim();
+    }
+    if (!doi) {
+      const doiMeta = doc.querySelector('meta[name="citation_doi"]');
+      if (doiMeta) doi = doiMeta.getAttribute('content') || '';
+    }
 
-  // 3. Ekstrak Publisher dari Scopus
-  const pubEl = doc.querySelector('[data-testid="source-info-publisher"], [data-testid="document-info-publisher"]');
-  if (pubEl) {
-    publisher = pubEl.textContent.trim();
-  }
-  if (!publisher) {
-    const pubMeta = doc.querySelector('meta[name="citation_publisher"]');
-    if (pubMeta) publisher = pubMeta.getAttribute('content') || '';
-  }
+    // 3. Ekstrak Publisher dari Scopus
+    const pubEl = doc.querySelector('[data-testid="source-info-publisher"], [data-testid="document-info-publisher"]');
+    if (pubEl) {
+      publisher = pubEl.textContent.trim();
+    }
+    if (!publisher) {
+      const pubMeta = doc.querySelector('meta[name="citation_publisher"]');
+      if (pubMeta) publisher = pubMeta.getAttribute('content') || '';
+    }
 
-  // 4. Ekstrak Conference Location / City dari Scopus
-  const locEl = doc.querySelector(
-    '[data-testid*="conference-location"], [data-testid*="location"], .DetailedInformationFlyout_metadata___Juk7 [data-testid*="location"]'
-  );
-  if (locEl) {
-    city = cleanCityOrLocation(locEl.textContent);
-  }
+    // 4. Ekstrak Conference Location / City dari Scopus
+    const locEl = doc.querySelector(
+      '[data-testid*="conference-location"], [data-testid*="location"], .DetailedInformationFlyout_metadata___Juk7 [data-testid*="location"]'
+    );
+    if (locEl) {
+      city = cleanCityOrLocation(locEl.textContent);
+    }
 
-  if (!city) {
-    const dts = doc.querySelectorAll('dl div dt, dl dt');
-    for (const dt of dts) {
-      const label = dt.textContent.trim().toLowerCase();
-      const dd = dt.nextElementSibling || dt.parentElement.querySelector('dd');
-      if ((label.includes('location') || label.includes('city') || label.includes('venue')) && dd) {
-        city = cleanCityOrLocation(dd.textContent);
-        break;
+    if (!city) {
+      const dts = doc.querySelectorAll('dl div dt, dl dt');
+      for (const dt of dts) {
+        const label = dt.textContent.trim().toLowerCase();
+        const dd = dt.nextElementSibling || dt.parentElement.querySelector('dd');
+        if ((label.includes('location') || label.includes('city') || label.includes('venue')) && dd) {
+          city = cleanCityOrLocation(dd.textContent);
+          break;
+        }
       }
     }
   }
 
   // 5. Ekstrak Source Title (Judul Buku / Prosiding)
-  const sourceTitleEl = doc.querySelector('[data-testid="source-info-source-title"]');
-  if (sourceTitleEl) {
-    sourceTitle = sourceTitleEl.textContent.trim();
+  if (doc && typeof doc.querySelector === 'function') {
+    const sourceTitleEl = doc.querySelector('[data-testid="source-info-source-title"]');
+    if (sourceTitleEl) {
+      sourceTitle = sourceTitleEl.textContent.trim();
+    }
   }
 
   // 6. Cek JSON __NEXT_DATA__ jika masih belum lengkap
-  if (!rawIsbnText || !city || !publisher) {
+  if (doc && (!rawIsbnText || !city || !publisher)) {
     try {
-      const nextScript = doc.getElementById('__NEXT_DATA__');
+      const nextScript = doc.getElementById ? doc.getElementById('__NEXT_DATA__') : doc.querySelector('#__NEXT_DATA__');
       if (nextScript && nextScript.textContent) {
         const nextJson = JSON.parse(nextScript.textContent);
         const searchNextData = (obj, depth = 0) => {
@@ -297,6 +305,28 @@ function extractScopusMetadata(docOrHtml) {
     } catch (e) {}
   }
 
+  // Fallback regex jika parsing string HTML
+  if (typeof docOrHtml === 'string') {
+    if (!rawIsbnText) {
+      const isbnDlMatch = docOrHtml.match(/<dt[^>]*>\s*ISBN\s*:?[\s\S]*?<dd[^>]*>([\s\S]*?)<\/dd>/i);
+      if (isbnDlMatch) {
+        rawIsbnText = isbnDlMatch[1].replace(/<[^>]+>/g, '').trim();
+      }
+    }
+    if (!publisher) {
+      const pubDlMatch = docOrHtml.match(/<dt[^>]*>\s*Publisher\s*:?[\s\S]*?<dd[^>]*>([\s\S]*?)<\/dd>/i);
+      if (pubDlMatch) {
+        publisher = pubDlMatch[1].replace(/<[^>]+>/g, '').trim();
+      }
+    }
+    if (!city) {
+      const locMatch = docOrHtml.match(/<dt[^>]*>\s*Conference\s*location\s*:?[\s\S]*?<dd[^>]*>([\s\S]*?)<\/dd>/i);
+      if (locMatch) {
+        city = cleanCityOrLocation(locMatch[1].replace(/<[^>]+>/g, '').trim());
+      }
+    }
+  }
+
   // 7. Pisahkan ISBN Electronic dan Print
   const isbnParsed = parseIsbnDetails(rawIsbnText, { doi });
 
@@ -316,10 +346,14 @@ function extractScopusMetadata(docOrHtml) {
  * Ekstraksi Metadata IEEE Document Page (Electronic ISBN, Print on Demand ISBN, Conference Location)
  */
 function extractIeeeDocumentMetadata(docOrHtml) {
-  let doc = docOrHtml;
-  if (typeof docOrHtml === 'string') {
-    const parser = new DOMParser();
-    doc = parser.parseFromString(docOrHtml, 'text/html');
+  let doc = null;
+  if (typeof docOrHtml === 'object' && docOrHtml !== null) {
+    doc = docOrHtml;
+  } else if (typeof docOrHtml === 'string' && typeof DOMParser !== 'undefined') {
+    try {
+      const parser = new DOMParser();
+      doc = parser.parseFromString(docOrHtml, 'text/html');
+    } catch (e) {}
   }
 
   let electronicIsbn = '';
@@ -329,54 +363,56 @@ function extractIeeeDocumentMetadata(docOrHtml) {
   let publisher = 'IEEE';
 
   // 1. Ekstrak Electronic ISBN & Print on Demand ISBN dari block abstract-metadata-indent
-  const metadataDivs = doc.querySelectorAll('.abstract-metadata-indent > div, .doc-abstract-confdate ~ div');
-  metadataDivs.forEach(div => {
-    const text = div.textContent || '';
-    const spanVal = div.querySelector('.isbn-value, span');
-    const valText = spanVal ? spanVal.textContent.trim() : '';
+  if (doc && typeof doc.querySelectorAll === 'function') {
+    const metadataDivs = doc.querySelectorAll('.abstract-metadata-indent > div, .doc-abstract-confdate ~ div');
+    metadataDivs.forEach(div => {
+      const text = div.textContent || '';
+      const spanVal = div.querySelector('.isbn-value, span');
+      const valText = spanVal ? spanVal.textContent.trim() : '';
 
-    if (/Electronic\s*ISBN/i.test(text)) {
-      const match = valText.match(/([0-9-]{10,17}[0-9Xx])/);
-      if (match && isValidIsbn(match[1])) {
-        electronicIsbn = sanitizeIsbn(match[1]);
+      if (/Electronic\s*ISBN/i.test(text)) {
+        const match = valText.match(/([0-9-]{10,17}[0-9Xx])/);
+        if (match && isValidIsbn(match[1])) {
+          electronicIsbn = sanitizeIsbn(match[1]);
+        }
+      } else if (/Print(?:\s*on\s*Demand|\(PoD\))?\s*ISBN/i.test(text)) {
+        const match = valText.match(/([0-9-]{10,17}[0-9Xx])/);
+        if (match && isValidIsbn(match[1])) {
+          printIsbn = sanitizeIsbn(match[1]);
+        }
       }
-    } else if (/Print(?:\s*on\s*Demand|\(PoD\))?\s*ISBN/i.test(text)) {
-      const match = valText.match(/([0-9-]{10,17}[0-9Xx])/);
-      if (match && isValidIsbn(match[1])) {
-        printIsbn = sanitizeIsbn(match[1]);
-      }
+    });
+
+    const locEl = doc.querySelector('.doc-abstract-conferenceLoc, .stats-document-abstract-confloc');
+    if (locEl) {
+      city = cleanCityOrLocation(locEl.textContent);
     }
-  });
+  }
 
-  // Fallback regex jika HTML tertutup tombol akordeon
-  if (!electronicIsbn || !printIsbn) {
-    const bodyText = doc.body ? doc.body.textContent : '';
+  // Fallback regex jika HTML string atau tertutup tombol akordeon
+  const htmlString = typeof docOrHtml === 'string' ? docOrHtml : (doc && doc.body ? doc.body.innerHTML : '');
+  if (htmlString) {
     if (!electronicIsbn) {
-      const m = bodyText.match(/Electronic\s*ISBN:?\s*([0-9-]{10,17}[0-9Xx])/i);
+      const m = htmlString.match(/Electronic\s*ISBN:?\s*([0-9-]{10,17}[0-9Xx])/i);
       if (m && isValidIsbn(m[1])) electronicIsbn = sanitizeIsbn(m[1]);
     }
     if (!printIsbn) {
-      const m = bodyText.match(/(?:Print(?:\s*on\s*Demand|\(PoD\))?\s*ISBN):?\s*([0-9-]{10,17}[0-9Xx])/i);
+      const m = htmlString.match(/(?:Print(?:\s*on\s*Demand|\(PoD\))?\s*ISBN):?\s*([0-9-]{10,17}[0-9Xx])/i);
       if (m && isValidIsbn(m[1])) printIsbn = sanitizeIsbn(m[1]);
     }
-  }
-
-  // 2. Ekstrak Conference Location
-  const locEl = doc.querySelector('.doc-abstract-conferenceLoc, .stats-document-abstract-confloc');
-  if (locEl) {
-    city = cleanCityOrLocation(locEl.textContent);
-  } else {
-    const bodyText = doc.body ? doc.body.textContent : '';
-    const m = bodyText.match(/Conference\s*Location:?\s*([^\n\r<]+)/i);
-    if (m) {
-      city = cleanCityOrLocation(m[1]);
+    if (!city) {
+      const m = htmlString.match(/Conference\s*Location:?\s*([^\n\r<]+)/i);
+      if (m) city = cleanCityOrLocation(m[1]);
     }
   }
 
-  // 3. Ekstrak DOI
-  const doiEl = doc.querySelector('.stats-document-abstract-doi a, [data-analytics_identifier="document_abstract_doi"] a');
-  if (doiEl) {
-    doi = doiEl.textContent.trim();
+  // 3. Ekstrak DOI dari IEEE
+  if (doc && typeof doc.querySelector === 'function') {
+    const doiEl = doc.querySelector('.stats-document-abstract-doi a, [href*="doi.org/10."]');
+    if (doiEl) {
+      const match = (doiEl.getAttribute('href') || doiEl.textContent || '').match(/10\.\d{4,9}\/[-._;()/:A-Za-z0-9]+/);
+      if (match) doi = match[0];
+    }
   }
 
   return {
@@ -393,10 +429,14 @@ function extractIeeeDocumentMetadata(docOrHtml) {
  * Secara ketat menolak ISSN dan memisahkan Electronic vs Print ISBN.
  */
 function extractGenericPublicationMetadata(docOrHtml, { doi = '', sourceUrl = '' } = {}) {
-  let doc = docOrHtml;
-  if (typeof docOrHtml === 'string') {
-    const parser = new DOMParser();
-    doc = parser.parseFromString(docOrHtml, 'text/html');
+  let doc = null;
+  if (typeof docOrHtml === 'object' && docOrHtml !== null) {
+    doc = docOrHtml;
+  } else if (typeof docOrHtml === 'string' && typeof DOMParser !== 'undefined') {
+    try {
+      const parser = new DOMParser();
+      doc = parser.parseFromString(docOrHtml, 'text/html');
+    } catch (e) {}
   }
 
   let rawIsbns = [];
@@ -405,24 +445,26 @@ function extractGenericPublicationMetadata(docOrHtml, { doi = '', sourceUrl = ''
   let city = '';
   let publisher = '';
 
-  // 1. Ekstrak dari Meta Tags Standar
-  const onlineIsbnMeta = doc.querySelector('meta[name="citation_online_isbn"]');
-  if (onlineIsbnMeta && isValidIsbn(onlineIsbnMeta.getAttribute('content'))) {
-    electronicIsbn = sanitizeIsbn(onlineIsbnMeta.getAttribute('content'));
-  }
-
-  const printIsbnMeta = doc.querySelector('meta[name="citation_print_isbn"]');
-  if (printIsbnMeta && isValidIsbn(printIsbnMeta.getAttribute('content'))) {
-    printIsbn = sanitizeIsbn(printIsbnMeta.getAttribute('content'));
-  }
-
-  const generalIsbnMeta = doc.querySelectorAll('meta[name="citation_isbn"], meta[property="book:isbn"]');
-  generalIsbnMeta.forEach(meta => {
-    const val = meta.getAttribute('content');
-    if (isValidIsbn(val)) {
-      rawIsbns.push(sanitizeIsbn(val));
+  // 1. Ekstrak dari Meta Tags Standar jika ada DOM
+  if (doc && typeof doc.querySelector === 'function') {
+    const onlineIsbnMeta = doc.querySelector('meta[name="citation_online_isbn"]');
+    if (onlineIsbnMeta && isValidIsbn(onlineIsbnMeta.getAttribute('content'))) {
+      electronicIsbn = sanitizeIsbn(onlineIsbnMeta.getAttribute('content'));
     }
-  });
+
+    const printIsbnMeta = doc.querySelector('meta[name="citation_print_isbn"]');
+    if (printIsbnMeta && isValidIsbn(printIsbnMeta.getAttribute('content'))) {
+      printIsbn = sanitizeIsbn(printIsbnMeta.getAttribute('content'));
+    }
+
+    const generalIsbnMeta = doc.querySelectorAll('meta[name="citation_isbn"], meta[property="book:isbn"]');
+    generalIsbnMeta.forEach(meta => {
+      const val = meta.getAttribute('content');
+      if (isValidIsbn(val)) {
+        rawIsbns.push(sanitizeIsbn(val));
+      }
+    });
+  }
 
   // 2. Ekstrak dari Bibliographic Items atau Teks Body
   const bodyText = doc.body ? doc.body.textContent : '';

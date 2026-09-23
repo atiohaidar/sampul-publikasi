@@ -222,6 +222,8 @@ class TabAutomator {
   async processUrl(initialUrl, {
     activeTab = true,
     timeoutMs = 28000,
+    downloadCovers = true,
+    metadataOnly = false,
     onStatus = () => {}
   } = {}) {
     this.isSkipped = false;
@@ -278,13 +280,39 @@ class TabAutomator {
       if (currentUrl.includes('scopus.com')) {
         onStatus('Halaman Scopus: Mencari tombol View at Publisher & Metadata...');
 
-        const scopusResult = await this.executeInTab(tabId, () => {
+        const scopusResult = await this.executeInTab(tabId, (isMetaOnly) => {
           return new Promise((resolve) => {
-            const MAX_WAIT = 12000;
+            const MAX_WAIT = isMetaOnly ? 8000 : 12000;
             const INTERVAL = 350;
             let elapsed = 0;
 
             const poll = () => {
+              // 1b. Coba klik tombol "Detailed information" jika ada untuk memicu flyout Scopus
+              const detailBtn = Array.from(document.querySelectorAll('button, a')).find(btn => {
+                const text = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+                return (text.includes('detailed information') || text.includes('detail information')) && btn.getAttribute('aria-expanded') !== 'true';
+              });
+              if (detailBtn) {
+                try { detailBtn.click(); } catch (e) {}
+              }
+
+              // Jika mode metadata only, periksa apakah flyout/DOM Scopus sudah memiliki ISBN
+              if (isMetaOnly) {
+                const outer = document.documentElement ? document.documentElement.outerHTML : '';
+                const hasIsbn = /97[89][- ]?[0-9]{1,5}[- ]?[0-9]+[- ]?[0-9]+[- ]?[0-9Xx]/.test(outer) ||
+                                outer.includes('DetailedInformation') || outer.includes('Flyout_main');
+                if (hasIsbn && elapsed >= 600) {
+                  const titleEl = document.querySelector('h1, h2, .document-title');
+                  resolve({
+                    success: true,
+                    fastMetaFound: true,
+                    paperTitle: titleEl ? titleEl.textContent.trim() : '',
+                    html: outer
+                  });
+                  return;
+                }
+              }
+
               // 1. Buka dropdown menu "Full text" jika ada dan belum terbuka
               const toolbar = document.querySelector('[class*="DocumentToolbar"], .DocumentToolbar_wrapper__Cfual, .document-toolbar');
               const searchScope = toolbar || document;
@@ -297,15 +325,6 @@ class TabAutomator {
 
               if (fullTextBtn && fullTextBtn.getAttribute('aria-expanded') !== 'true') {
                 fullTextBtn.click();
-              }
-
-              // 1b. Coba klik tombol "Detailed information" jika ada untuk memicu flyout Scopus
-              const detailBtn = Array.from(document.querySelectorAll('button, a')).find(btn => {
-                const text = (btn.innerText || btn.textContent || '').trim().toLowerCase();
-                return (text.includes('detailed information') || text.includes('detail information')) && btn.getAttribute('aria-expanded') !== 'true';
-              });
-              if (detailBtn) {
-                try { detailBtn.click(); } catch (e) {}
               }
 
               // 2. Cari link "View at Publisher"
@@ -388,7 +407,7 @@ class TabAutomator {
 
             poll();
           });
-        });
+        }, [metadataOnly]);
 
         // Ekstraksi Scopus Metadata (ISBN Electronic, ISBN Print, City, Publisher)
         if (scopusResult && scopusResult.html && typeof extractScopusMetadata === 'function') {
@@ -400,6 +419,31 @@ class TabAutomator {
             }
           } catch (scopusErr) {
             console.warn('[Automator] Gagal ekstrak metadata Scopus:', scopusErr);
+          }
+        }
+
+        // JIKA MODE METADATA ONLY (Cepat / Tanpa Cover):
+        // Jika Scopus sudah menyediakan ISBN, ATAU tidak ada link publisher
+        if (metadataOnly) {
+          if (scopusMeta.isbnElectronic || scopusMeta.isbnPrint || !scopusResult || !scopusResult.publisherUrl) {
+            onStatus(`Scopus: Selesai mengambil metadata tanpa cover (ISBN: ${scopusMeta.isbnElectronic || scopusMeta.isbnPrint || '-'}, Lokasi: ${scopusMeta.city || '-'}). Selesai!`);
+            return {
+              publisherType: 'Scopus',
+              title: (scopusResult && scopusResult.paperTitle) || scopusMeta.sourceTitle || paperOrChapterTitle || '',
+              chapterTitle: (scopusResult && scopusResult.paperTitle) || '',
+              publisher: scopusMeta.publisher || 'Scopus',
+              city: scopusMeta.city || '',
+              isbnElectronic: scopusMeta.isbnElectronic || '',
+              isbnPrint: scopusMeta.isbnPrint || '',
+              isbn: scopusMeta.isbnElectronic || scopusMeta.isbnPrint || '',
+              doi: scopusMeta.doi || '',
+              scopusUrl: initialUrl,
+              sourceUrl: initialUrl,
+              isPdfCover: false,
+              coverUrl: '',
+              coverPdfUrl: '',
+              coverFilename: 'Tanpa Cover (Mode Cepat)'
+            };
           }
         }
 
@@ -486,6 +530,29 @@ class TabAutomator {
             } catch (ieeeErr) {
               console.warn('[Automator] Gagal ekstrak metadata IEEE document:', ieeeErr);
             }
+          }
+
+          // JIKA MODE METADATA ONLY (Cepat / Tanpa Cover):
+          if (metadataOnly) {
+            onStatus(`IEEE: Selesai mengambil metadata tanpa cover (ISBN Elec: ${ieeeDocMeta.isbnElectronic || '-'}, Print: ${ieeeDocMeta.isbnPrint || '-'}, Lokasi: ${ieeeDocMeta.city || '-'}).`);
+            return {
+              publisherType: 'IEEE',
+              title: (ieeeDocResult && ieeeDocResult.paperTitle) || paperOrChapterTitle || '',
+              chapterTitle: paperOrChapterTitle || (ieeeDocResult && ieeeDocResult.paperTitle) || '',
+              publisher: ieeeDocMeta.publisher || 'IEEE',
+              city: ieeeDocMeta.city || scopusMeta.city || '',
+              isbnElectronic: ieeeDocMeta.isbnElectronic || scopusMeta.isbnElectronic || '',
+              isbnPrint: ieeeDocMeta.isbnPrint || scopusMeta.isbnPrint || '',
+              isbn: ieeeDocMeta.isbnElectronic || ieeeDocMeta.isbnPrint || scopusMeta.isbnElectronic || scopusMeta.isbnPrint || '',
+              doi: ieeeDocMeta.doi || scopusMeta.doi || '',
+              scopusUrl: scopusUrl,
+              publisherUrl: currentUrl,
+              sourceUrl: currentUrl,
+              isPdfCover: false,
+              coverUrl: '',
+              coverPdfUrl: '',
+              coverFilename: 'Tanpa Cover (Mode Cepat)'
+            };
           }
 
           if (!ieeeDocResult || !ieeeDocResult.success) {
@@ -1029,8 +1096,8 @@ class TabAutomator {
               title: sdChapterData.publicationTitle || 'Elsevier Publication',
               chapterTitle: paperOrChapterTitle || sdChapterData.chapterTitle,
               subtitle: sdChapterData.series || '',
-              coverUrl: sdChapterData.coverUrl,
-              coverFilename: '',
+              coverUrl: metadataOnly ? '' : sdChapterData.coverUrl,
+              coverFilename: metadataOnly ? 'Tanpa Cover (Mode Cepat)' : '',
               isbnElectronic: scopusMeta.isbnElectronic || '',
               isbnPrint: scopusMeta.isbnPrint || '',
               city: scopusMeta.city || '',
@@ -1147,8 +1214,8 @@ class TabAutomator {
           title: sdBookData.title,
           chapterTitle: paperOrChapterTitle,
           subtitle: sdBookData.subtitle,
-          coverUrl: sdBookData.coverUrl || (sdChapterData ? sdChapterData.coverUrl : ''),
-          coverFilename: '',
+          coverUrl: metadataOnly ? '' : (sdBookData.coverUrl || (sdChapterData ? sdChapterData.coverUrl : '')),
+          coverFilename: metadataOnly ? 'Tanpa Cover (Mode Cepat)' : '',
           isbnElectronic: scopusMeta.isbnElectronic || sdIsbnClean || '',
           isbnPrint: scopusMeta.isbnPrint || '',
           city: scopusMeta.city || '',
@@ -1793,6 +1860,32 @@ class TabAutomator {
           paperOrChapterTitle = iopData.paperTitle;
         }
 
+        if (metadataOnly) {
+          onStatus('IOP: Selesai mengambil metadata tanpa cover.');
+          const fullTitle = (iopData && iopData.seriesTitle) ? `${iopData.seriesTitle}${iopData.volName ? ' (' + iopData.volName + ')' : ''}` : 'IOP Conference Series';
+          return {
+            publisherType: 'IOP',
+            title: fullTitle,
+            chapterTitle: paperOrChapterTitle || (iopData && iopData.paperTitle) || '',
+            subtitle: (iopData && iopData.volName) || '',
+            coverUrl: '',
+            coverFilename: 'Tanpa Cover (Mode Cepat)',
+            isbnElectronic: scopusMeta.isbnElectronic || '',
+            isbnPrint: scopusMeta.isbnPrint || '',
+            city: scopusMeta.city || '',
+            isbn: scopusMeta.isbnElectronic || scopusMeta.isbnPrint || '',
+            doi: scopusMeta.doi || '',
+            year: (iopData && iopData.year) || '',
+            editors: 'IOP Publishing',
+            series: (iopData && iopData.seriesTitle) || 'IOP Publishing',
+            publisher: 'IOP Publishing',
+            scopusUrl: scopusUrl,
+            bookUrl: currentUrl,
+            sourceUrl: currentUrl,
+            isPdfCover: false
+          };
+        }
+
         if (iopData && !iopData.coverUrl && iopData.seriesUrl) {
           onStatus(`Membuka Jurnal/Series Induk IOP: ${iopData.seriesUrl}...`);
           await this.updateTabUrl(tabId, iopData.seriesUrl, activeTab);
@@ -1907,8 +2000,8 @@ class TabAutomator {
             title: genericData.title,
             chapterTitle: paperOrChapterTitle,
             subtitle: '',
-            coverUrl: genericData.coverUrl,
-            coverFilename: '',
+            coverUrl: metadataOnly ? '' : genericData.coverUrl,
+            coverFilename: metadataOnly ? 'Tanpa Cover (Mode Cepat)' : '',
             isbnElectronic: finalIsbnElec,
             isbnPrint: finalIsbnPrint,
             city: finalCity,
@@ -2045,6 +2138,11 @@ class TabAutomator {
         bookData.publisher = scopusMeta.publisher;
       }
 
+      if (metadataOnly) {
+        bookData.coverUrl = '';
+        bookData.coverFilename = 'Tanpa Cover (Mode Cepat)';
+      }
+
       return bookData;
 
     } finally {
@@ -2078,7 +2176,7 @@ class TabAutomator {
     });
   }
 
-  async executeInTab(tabId, func) {
+  async executeInTab(tabId, func, args = []) {
     if (typeof chrome === 'undefined' || !chrome.scripting) {
       throw new Error('API chrome.scripting tidak tersedia.');
     }
@@ -2087,10 +2185,14 @@ class TabAutomator {
       throw new Error('Tab telah ditutup atau tidak ditemukan.');
     }
     try {
-      const results = await chrome.scripting.executeScript({
+      const execOpts = {
         target: { tabId },
         func: func
-      });
+      };
+      if (args && (Array.isArray(args) ? args.length > 0 : true)) {
+        execOpts.args = Array.isArray(args) ? args : [args];
+      }
+      const results = await chrome.scripting.executeScript(execOpts);
       if (results && results[0]) {
         return results[0].result;
       }

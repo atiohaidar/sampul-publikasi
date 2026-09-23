@@ -59,11 +59,39 @@
             </div>
           </div>
 
-          <!-- Download & Naming Settings -->
+          <!-- Pilihan Mode Scraping: Cover vs Hanya ISBN & Kota -->
           <div class="panel-box">
+            <h3 class="panel-title">Mode Scraping</h3>
+            <div class="dash-mode-options">
+              <label class="dash-mode-card" id="dashCardFull">
+                <input type="radio" name="dashScrapeMode" id="dashModeFull" value="full" checked>
+                <div class="dash-mode-info">
+                  <div class="dash-mode-title">
+                    <span class="mode-icon">📦</span>
+                    <strong>Lengkap: Cover + Metadata</strong>
+                  </div>
+                  <p class="dash-mode-desc">Unduh berkas cover (PDF/JPG/PNG) & ambil ISBN + Lokasi</p>
+                </div>
+              </label>
+
+              <label class="dash-mode-card" id="dashCardMetaOnly">
+                <input type="radio" name="dashScrapeMode" id="dashModeMetaOnly" value="meta_only">
+                <div class="dash-mode-info">
+                  <div class="dash-mode-title">
+                    <span class="mode-icon">⚡</span>
+                    <strong>Cepat: Hanya ISBN & Lokasi (Tanpa Cover)</strong>
+                  </div>
+                  <p class="dash-mode-desc">Ambil ISBN (Elec/Print) & Kota dari Scopus/Publisher tanpa cover (Super Cepat!)</p>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <!-- Download & Naming Settings -->
+          <div class="panel-box" id="dashSettingsPanelBox">
             <h3 class="panel-title">Pengaturan Unduhan & Tab</h3>
             
-            <div class="form-item">
+            <div class="form-item" id="dashFormItemSubfolder">
               <label for="dashSubfolder">Subfolder Cover Asli (PDF/JPG):</label>
               <input type="text" id="dashSubfolder" value="book-covers" placeholder="book-covers">
               <span class="hint">Tersimpan di: <code>Downloads/[subfolder]/[nama-file]</code></span>
@@ -75,7 +103,7 @@
               <span class="hint">Tersimpan di: <code>Downloads/[subfolder-png]/[id].png</code></span>
             </div>
 
-            <div class="form-item">
+            <div class="form-item" id="dashFormItemNaming">
               <label for="dashNamingPattern">Format Nama Cover:</label>
               <select id="dashNamingPattern">
                 <option value="id_only" selected>Sesuai ID / Nomor (Contoh: 1.pdf / 1.jpg)</option>
@@ -96,11 +124,11 @@
                 <input type="checkbox" id="dashChkActiveTab" checked>
                 <span>Fokuskan Tab (Ikuti proses pembukaan tab secara visual)</span>
               </label>
-              <label class="chk-label" style="font-weight: 600; color: #059669;">
+              <label class="chk-label" id="dashChkPngFolderLabel" style="font-weight: 600; color: #059669;">
                 <input type="checkbox" id="dashChkPngFolder" checked>
                 <span>Buat Folder Khusus Lampiran PNG (.png)</span>
               </label>
-              <label class="chk-label">
+              <label class="chk-label" id="dashChkCoversLabel">
                 <input type="checkbox" id="dashChkCovers" checked>
                 <span>Download Berkas Cover Asli (PDF / JPG / GIF)</span>
               </label>
@@ -117,7 +145,7 @@
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polygon points="5 3 19 12 5 21 5 3"></polygon>
               </svg>
-              <span>Mulai Otomasi Tab & Download</span>
+              <span id="dashStartText">Mulai Otomasi Tab & Download</span>
             </button>
             <button id="btnDashSkip" class="btn-warning hidden" type="button" title="Lewati link yang sedang berjalan dan langsung lanjut ke link berikutnya">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

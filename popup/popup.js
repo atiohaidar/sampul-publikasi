@@ -20,6 +20,44 @@ document.addEventListener('DOMContentLoaded', () => {
   const chkActiveTab = document.getElementById('chkActiveTab');
   const chkDownloadCovers = document.getElementById('chkDownloadCovers');
   const chkAutoCsv = document.getElementById('chkAutoCsv');
+  const popModeFull = document.getElementById('popModeFull');
+  const popModeMetaOnly = document.getElementById('popModeMetaOnly');
+  const startScrapingText = document.getElementById('startScrapingText');
+  const subfolderFormGroup = document.getElementById('subfolderFormGroup');
+  const namingPatternFormGroup = document.getElementById('namingPatternFormGroup');
+
+  function updateScrapeModeUI(isMetaOnly) {
+    if (popModeMetaOnly) popModeMetaOnly.checked = isMetaOnly;
+    if (popModeFull) popModeFull.checked = !isMetaOnly;
+    if (chkDownloadCovers) chkDownloadCovers.checked = !isMetaOnly;
+
+    if (startScrapingText) {
+      startScrapingText.textContent = isMetaOnly
+        ? '⚡ Mulai Ambil ISBN & Lokasi (Cepat)'
+        : '📦 Mulai Scraping & Download Cover';
+    }
+
+    if (subfolderFormGroup) subfolderFormGroup.style.opacity = isMetaOnly ? '0.45' : '1';
+    if (namingPatternFormGroup) namingPatternFormGroup.style.opacity = isMetaOnly ? '0.45' : '1';
+  }
+
+  if (popModeFull) {
+    popModeFull.addEventListener('change', () => {
+      if (popModeFull.checked) {
+        updateScrapeModeUI(false);
+        saveSettings();
+      }
+    });
+  }
+
+  if (popModeMetaOnly) {
+    popModeMetaOnly.addEventListener('change', () => {
+      if (popModeMetaOnly.checked) {
+        updateScrapeModeUI(true);
+        saveSettings();
+      }
+    });
+  }
 
   const btnStartScraping = document.getElementById('btnStartScraping');
   const btnStopScraping = document.getElementById('btnStopScraping');
@@ -64,7 +102,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Load saved settings if any
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-    chrome.storage.local.get(['subfolder', 'namingPattern', 'downloadCovers', 'autoCsv', 'activeTab', 'pendingUrls', 'autoRun'], (data) => {
+    chrome.storage.local.get(['subfolder', 'namingPattern', 'downloadCovers', 'scrapeMode', 'autoCsv', 'activeTab', 'pendingUrls', 'autoRun'], (data) => {
       if (data.subfolder !== undefined) subfolderInput.value = data.subfolder;
       if (data.namingPattern !== undefined && data.namingPattern !== 'title') {
         namingPatternSelect.value = data.namingPattern;
@@ -72,7 +110,11 @@ document.addEventListener('DOMContentLoaded', () => {
         namingPatternSelect.value = 'id_only';
         chrome.storage.local.set({ namingPattern: 'id_only' });
       }
-      if (data.downloadCovers !== undefined) chkDownloadCovers.checked = data.downloadCovers;
+      if (data.scrapeMode !== undefined) {
+        updateScrapeModeUI(data.scrapeMode === 'meta_only');
+      } else if (data.downloadCovers !== undefined) {
+        updateScrapeModeUI(!data.downloadCovers);
+      }
       if (data.autoCsv !== undefined) chkAutoCsv.checked = data.autoCsv;
       if (data.activeTab !== undefined && chkActiveTab) chkActiveTab.checked = data.activeTab;
 
@@ -95,10 +137,12 @@ document.addEventListener('DOMContentLoaded', () => {
   // Save settings on change
   const saveSettings = () => {
     if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      const isMetaOnly = popModeMetaOnly ? popModeMetaOnly.checked : !chkDownloadCovers.checked;
       chrome.storage.local.set({
         subfolder: subfolderInput.value.trim(),
         namingPattern: namingPatternSelect.value,
-        downloadCovers: chkDownloadCovers.checked,
+        downloadCovers: !isMetaOnly,
+        scrapeMode: isMetaOnly ? 'meta_only' : 'full',
         autoCsv: chkAutoCsv.checked,
         activeTab: chkActiveTab ? chkActiveTab.checked : true
       });
@@ -108,7 +152,10 @@ document.addEventListener('DOMContentLoaded', () => {
   subfolderInput.addEventListener('change', saveSettings);
   namingPatternSelect.addEventListener('change', saveSettings);
   if (chkActiveTab) chkActiveTab.addEventListener('change', saveSettings);
-  chkDownloadCovers.addEventListener('change', saveSettings);
+  chkDownloadCovers.addEventListener('change', () => {
+    updateScrapeModeUI(!chkDownloadCovers.checked);
+    saveSettings();
+  });
   chkAutoCsv.addEventListener('change', saveSettings);
 
   // Fungsi membuka Side Panel
@@ -286,9 +333,12 @@ document.addEventListener('DOMContentLoaded', () => {
     let successCount = 0;
     let failedCount = 0;
 
+    const isMetaOnly = popModeMetaOnly ? popModeMetaOnly.checked : !chkDownloadCovers.checked;
+
     await scraperEngine.run({
       urls: entries,
-      downloadCovers: chkDownloadCovers.checked,
+      downloadCovers: !isMetaOnly,
+      metadataOnly: isMetaOnly,
       subfolder: subfolderInput.value.trim() || 'book-covers',
       namingPattern: namingPatternSelect.value,
       delayMs: 1500,

@@ -102,6 +102,24 @@
         ></textarea>
       </section>
 
+      <!-- Pilihan Mode Scraping: Cover vs Hanya ISBN & Kota -->
+      <div class="popup-mode-selector">
+        <label class="popup-mode-card" id="popCardFull">
+          <input type="radio" name="popupScrapeMode" id="popModeFull" value="full" checked>
+          <div class="popup-mode-body">
+            <span class="popup-mode-title">📦 Cover + Metadata</span>
+            <span class="popup-mode-desc">Download cover & ekstrak ISBN + Lokasi</span>
+          </div>
+        </label>
+        <label class="popup-mode-card" id="popCardMetaOnly">
+          <input type="radio" name="popupScrapeMode" id="popModeMetaOnly" value="meta_only">
+          <div class="popup-mode-body">
+            <span class="popup-mode-title">⚡ Hanya ISBN & Kota</span>
+            <span class="popup-mode-desc">Tanpa cover (Super Cepat!)</span>
+          </div>
+        </label>
+      </div>
+
       <!-- Settings Accordion / Panel -->
       <details class="settings-details">
         <summary class="settings-summary">
@@ -111,13 +129,13 @@
           </svg>
         </summary>
         <div class="settings-content">
-          <div class="form-group">
+          <div class="form-group" id="subfolderFormGroup">
             <label for="subfolderInput">Subfolder Penyimpanan Cover:</label>
             <input type="text" id="subfolderInput" value="book-covers" placeholder="Contoh: book-covers">
             <small class="form-hint">Akan disimpan di: <code>Downloads/[subfolder]/[nama-file]</code></small>
           </div>
 
-          <div class="form-group">
+          <div class="form-group" id="namingPatternFormGroup">
             <label for="namingPatternSelect">Format Nama File Cover:</label>
             <select id="namingPatternSelect">
               <option value="id_only" selected>Sesuai ID / Nomor (Contoh: 1.pdf / 1.jpg)</option>
@@ -132,7 +150,7 @@
               <input type="checkbox" id="chkActiveTab" checked>
               <span>Fokuskan Tab (Ikuti proses secara visual)</span>
             </label>
-            <label class="checkbox-label">
+            <label class="checkbox-label" id="chkDownloadCoversLabel">
               <input type="checkbox" id="chkDownloadCovers" checked>
               <span>Unduh file cover otomatis (JPG / PDF)</span>
             </label>
@@ -150,7 +168,7 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polygon points="5 3 19 12 5 21 5 3"></polygon>
           </svg>
-          <span>Mulai Scraping & Download</span>
+          <span id="startScrapingText">Mulai Scraping & Download</span>
         </button>
         <button id="btnSkipCurrent" class="btn-warning hidden" type="button" title="Lewati link ini dan langsung lanjut ke link berikutnya">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">

@@ -22,6 +22,57 @@ document.addEventListener('DOMContentLoaded', () => {
   const dashChkPngFolder = document.getElementById('dashChkPngFolder');
   const dashChkCovers = document.getElementById('dashChkCovers');
   const dashChkAutoCsv = document.getElementById('dashChkAutoCsv');
+  const dashModeFull = document.getElementById('dashModeFull');
+  const dashModeMetaOnly = document.getElementById('dashModeMetaOnly');
+  const dashStartText = document.getElementById('dashStartText');
+  const dashFormItemSubfolder = document.getElementById('dashFormItemSubfolder');
+  const formItemSubfolderPng = document.getElementById('formItemSubfolderPng');
+  const dashFormItemNaming = document.getElementById('dashFormItemNaming');
+
+  function updateDashScrapeModeUI(isMetaOnly) {
+    if (dashModeMetaOnly) dashModeMetaOnly.checked = isMetaOnly;
+    if (dashModeFull) dashModeFull.checked = !isMetaOnly;
+    if (dashChkCovers) dashChkCovers.checked = !isMetaOnly;
+    if (dashChkPngFolder) dashChkPngFolder.checked = !isMetaOnly;
+
+    if (dashStartText) {
+      dashStartText.textContent = isMetaOnly
+        ? '⚡ Mulai Ambil ISBN & Lokasi (Cepat)'
+        : '📦 Mulai Otomasi Tab & Download';
+    }
+
+    if (dashFormItemSubfolder) dashFormItemSubfolder.style.opacity = isMetaOnly ? '0.4' : '1';
+    if (formItemSubfolderPng) formItemSubfolderPng.style.opacity = isMetaOnly ? '0.4' : '1';
+    if (dashFormItemNaming) dashFormItemNaming.style.opacity = isMetaOnly ? '0.4' : '1';
+  }
+
+  if (dashModeFull) {
+    dashModeFull.addEventListener('change', () => {
+      if (dashModeFull.checked) {
+        updateDashScrapeModeUI(false);
+        saveDashModeSettings();
+      }
+    });
+  }
+
+  if (dashModeMetaOnly) {
+    dashModeMetaOnly.addEventListener('change', () => {
+      if (dashModeMetaOnly.checked) {
+        updateDashScrapeModeUI(true);
+        saveDashModeSettings();
+      }
+    });
+  }
+
+  function saveDashModeSettings() {
+    if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
+      const isMeta = dashModeMetaOnly ? dashModeMetaOnly.checked : !dashChkCovers.checked;
+      chrome.storage.local.set({
+        downloadCovers: !isMeta,
+        scrapeMode: isMeta ? 'meta_only' : 'full'
+      });
+    }
+  }
 
   const btnDashStart = document.getElementById('btnDashStart');
   const btnDashStop = document.getElementById('btnDashStop');
@@ -101,7 +152,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Load saved settings & pending URLs if transferred from popup
   if (typeof chrome !== 'undefined' && chrome.storage && chrome.storage.local) {
-    chrome.storage.local.get(['subfolder', 'subfolderPng', 'namingPattern', 'downloadCovers', 'savePngFolder', 'autoCsv', 'activeTab', 'pendingUrls'], (data) => {
+    chrome.storage.local.get(['subfolder', 'subfolderPng', 'namingPattern', 'downloadCovers', 'scrapeMode', 'savePngFolder', 'autoCsv', 'activeTab', 'pendingUrls'], (data) => {
       if (data.subfolder !== undefined && dashSubfolder) dashSubfolder.value = data.subfolder;
       if (data.subfolderPng !== undefined && dashSubfolderPng) dashSubfolderPng.value = data.subfolderPng;
       if (data.namingPattern !== undefined && data.namingPattern !== 'title' && dashNamingPattern) {
@@ -110,7 +161,11 @@ document.addEventListener('DOMContentLoaded', () => {
         dashNamingPattern.value = 'id_only';
         chrome.storage.local.set({ namingPattern: 'id_only' });
       }
-      if (data.downloadCovers !== undefined && dashChkCovers) dashChkCovers.checked = data.downloadCovers;
+      if (data.scrapeMode !== undefined) {
+        updateDashScrapeModeUI(data.scrapeMode === 'meta_only');
+      } else if (data.downloadCovers !== undefined && dashChkCovers) {
+        updateDashScrapeModeUI(!data.downloadCovers);
+      }
       if (data.savePngFolder !== undefined && dashChkPngFolder) dashChkPngFolder.checked = data.savePngFolder;
       if (data.autoCsv !== undefined && dashChkAutoCsv) dashChkAutoCsv.checked = data.autoCsv;
       if (data.activeTab !== undefined && dashChkActiveTab) dashChkActiveTab.checked = data.activeTab;
@@ -139,7 +194,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     if (dashChkCovers) {
       dashChkCovers.addEventListener('change', () => {
-        chrome.storage.local.set({ downloadCovers: dashChkCovers.checked });
+        updateDashScrapeModeUI(!dashChkCovers.checked);
+        saveDashModeSettings();
       });
     }
     if (dashChkAutoCsv) {
@@ -497,11 +553,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const delaySeconds = parseFloat(dashDelay.value) || 1.5;
     const shouldFocusTab = dashChkActiveTab.checked; // User requested tab to be visible and followed!
 
+    const isMetaOnly = dashModeMetaOnly ? dashModeMetaOnly.checked : !dashChkCovers.checked;
+
     await scraperEngine.run({
       urls: entries,
-      downloadCovers: dashChkCovers.checked,
+      downloadCovers: !isMetaOnly,
+      metadataOnly: isMetaOnly,
       subfolder: dashSubfolder.value.trim() || 'book-covers',
-      savePngFolder: dashChkPngFolder ? dashChkPngFolder.checked : true,
+      savePngFolder: !isMetaOnly && (dashChkPngFolder ? dashChkPngFolder.checked : true),
       subfolderPng: dashSubfolderPng ? dashSubfolderPng.value.trim() : 'book-covers-png',
       namingPattern: dashNamingPattern.value,
       delayMs: Math.max(500, Math.floor(delaySeconds * 1000)),

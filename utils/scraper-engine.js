@@ -62,6 +62,7 @@ class SpringerScraperEngine {
   async run({
     urls = [],
     downloadCovers = true,
+    metadataOnly = false,
     subfolder = 'book-covers',
     savePngFolder = true,
     subfolderPng = 'book-covers-png',
@@ -78,45 +79,40 @@ class SpringerScraperEngine {
     this.results = [];
     this.tabAutomator = new TabAutomator();
 
-    // Filter and clean input URLs / items (supports plain URL or ID + URL pairs)
     const cleanItems = urls
       .map((entry, idx) => {
         if (!entry) return null;
         if (typeof entry === 'object' && entry.url) {
           return {
-            id: String(entry.id || (idx + 1)).trim(),
-            url: String(entry.url).trim(),
-            index: idx + 1
+            id: entry.id || String(idx + 1),
+            url: entry.url.trim()
           };
         }
         if (typeof entry === 'string') {
-          const str = entry.trim();
-          if (!str) return null;
-
-          // Cek format jika ada ID sebelum URL: "1 \t https://..." atau "1, https://..."
-          const match = str.match(/^(.*?)(?:[\t,;|]+|\s{2,})(https?:\/\/.+)$/i);
-          if (match && match[1].trim()) {
+          const trimmed = entry.trim();
+          if (!trimmed) return null;
+          // Cek pola ID \t URL
+          const parts = trimmed.split(/[\t,;]+/);
+          if (parts.length >= 2 && /^https?:\/\//i.test(parts[parts.length - 1].trim())) {
+            const rawUrl = parts.pop().trim();
+            const rawId = parts.join(' ').trim();
             return {
-              id: match[1].trim().replace(/^["']|["']$/g, ''),
-              url: match[2].trim(),
-              index: idx + 1
+              id: rawId || String(idx + 1),
+              url: rawUrl
             };
           }
-
-          // Cek apakah string adalah URL langsung
-          const urlMatch = str.match(/(https?:\/\/[^\s"',]+)/i);
+          const urlMatch = trimmed.match(/(https?:\/\/[^\s"',]+)/i);
           if (urlMatch) {
             const scopusIdMatch = urlMatch[1].match(/\/publications\/(\d+)/i) || urlMatch[1].match(/eid=2-s2\.0-(\d+)/i);
             return {
               id: scopusIdMatch ? scopusIdMatch[1] : String(idx + 1),
-              url: urlMatch[1],
-              index: idx + 1
+              url: urlMatch[1]
             };
           }
         }
         return null;
       })
-      .filter(item => item && /^https?:\/\//i.test(item.url));
+      .filter(item => item !== null && item.url.startsWith('http'));
 
     const total = cleanItems.length;
     let successCount = 0;
@@ -134,9 +130,9 @@ class SpringerScraperEngine {
       }
 
       const item = cleanItems[i];
+      const index = i + 1;
       const currentUrl = item.url;
       const currentId = item.id;
-      const index = i + 1;
 
       onProgress({
         index,
@@ -148,8 +144,11 @@ class SpringerScraperEngine {
 
       try {
         // Eksekusi rantai otomatis: Scopus -> Springer / IEEE Xplore / ScienceDirect
+        const isMetaOnly = Boolean(metadataOnly || !downloadCovers);
         const bookData = await this.tabAutomator.processUrl(currentUrl, {
           activeTab: activeTab,
+          downloadCovers: downloadCovers && !isMetaOnly,
+          metadataOnly: isMetaOnly,
           onStatus: (statusMsg) => {
             onProgress({
               index,
@@ -172,9 +171,17 @@ class SpringerScraperEngine {
           : `${targetSubfolder}-png`;
 
         // ========================================================
+        // KASUS 0: Mode Metadata Saja / Tanpa Cover
+        // ========================================================
+        if (isMetaOnly) {
+          bookData.coverFilename = 'Tanpa Cover (Mode Cepat)';
+          bookData.coverUrl = '';
+          bookData.coverPdfUrl = '';
+        }
+        // ========================================================
         // KASUS 1: IEEE Xplore (Cover adalah Dokumen PDF)
         // ========================================================
-        if (bookData.isPdfCover && bookData.coverPdfUrl) {
+        else if (bookData.isPdfCover && bookData.coverPdfUrl) {
           const safeId = sanitizeFilename(String(currentId || index), 'item');
           let pdfFilename = '';
           let pngFilename = '';
