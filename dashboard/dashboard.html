@@ -390,9 +390,19 @@
 
         <!-- Data Table Area -->
         <section class="table-container">
-          <div class="table-header-row">
-            <h3>Hasil Scraping Cover & Metadata</h3>
-            <span class="table-note">Tab terbuka secara visual ➔ Menavigasi Publisher ➔ Mengunduh Cover ➔ Menutup tab</span>
+          <div class="table-header-row" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;">
+            <div>
+              <h3 style="margin: 0;">Hasil Scraping Cover & Metadata</h3>
+              <span class="table-note">Data bertambah langsung (real-time). Anda bisa menyalin tabel kapan saja.</span>
+            </div>
+            <div style="display: flex; gap: 8px;">
+              <button id="btnCopyDashTable" class="btn-sm btn-secondary" type="button" style="display: flex; align-items: center; gap: 5px; font-weight: 600; padding: 6px 12px; background: #f8fafc; border: 1px solid #cbd5e1; cursor: pointer; border-radius: 6px;" title="Salin seluruh baris tabel saat ini ke clipboard untuk ditempel langsung di Excel atau Google Sheets">
+                📋 Salin Tabel (Excel / Sheets)
+              </button>
+              <button id="btnDashExportCsvHeader" class="btn-sm btn-primary" type="button" style="display: flex; align-items: center; gap: 5px; font-weight: 600; padding: 6px 12px; cursor: pointer; border-radius: 6px;" title="Unduh data saat ini sebagai file CSV">
+                📥 Unduh CSV
+              </button>
+            </div>
           </div>
           <div class="table-scroll">
             <table class="data-table">

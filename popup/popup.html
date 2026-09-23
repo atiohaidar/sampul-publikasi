@@ -230,14 +230,36 @@
           <span id="retryFailedText">Coba Lagi Link yang Gagal</span>
         </button>
 
-        <button id="btnExportCsv" class="btn-secondary" type="button">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="7 10 12 15 17 10"></polyline>
-            <line x1="12" y1="15" x2="12" y2="3"></line>
-          </svg>
-          <span>Unduh File CSV Metadata</span>
-        </button>
+        <div style="display: flex; gap: 6px; margin-bottom: 8px;">
+          <button id="btnPopupCopyTable" class="btn-secondary" type="button" style="flex: 1; font-weight: 600; font-size: 11px; padding: 7px 8px; justify-content: center;" title="Salin seluruh baris tabel saat ini ke clipboard untuk ditempel di Excel atau Google Sheets">
+            📋 Salin Tabel
+          </button>
+          <button id="btnExportCsv" class="btn-primary" type="button" style="flex: 1; font-weight: 600; font-size: 11px; padding: 7px 8px; justify-content: center;">
+            📥 Unduh CSV
+          </button>
+        </div>
+
+        <!-- Live Table Preview -->
+        <div id="popupLiveTableBox" class="popup-live-table-box hidden" style="border-top: 1px solid var(--border); padding-top: 6px; margin-top: 4px;">
+          <div style="display:flex; justify-content: space-between; align-items:center; margin-bottom: 4px;">
+            <span style="font-size: 10px; font-weight: 700; color: #475569;">Tabel Hasil (<span id="popupLiveCount">0</span>):</span>
+            <span style="font-size: 9px; color: #64748b;">Bisa langsung dicopy</span>
+          </div>
+          <div style="max-height: 120px; overflow-y: auto; border: 1px solid var(--border); border-radius: 4px; font-size: 10px; background: #fff;">
+            <table style="width: 100%; border-collapse: collapse; text-align: left;">
+              <thead style="background: #f8fafc; position: sticky; top: 0; border-bottom: 1px solid var(--border);">
+                <tr>
+                  <th style="padding: 3px 5px;">ID</th>
+                  <th style="padding: 3px 5px;">Elec ISBN</th>
+                  <th style="padding: 3px 5px;">Print ISBN</th>
+                  <th style="padding: 3px 5px;">Kota</th>
+                </tr>
+              </thead>
+              <tbody id="popupLiveTableBody">
+              </tbody>
+            </table>
+          </div>
+        </div>
       </section>
     </main>
 

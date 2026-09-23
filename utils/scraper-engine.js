@@ -341,8 +341,8 @@ class SpringerScraperEngine {
         onItemError(failedItem, err);
       }
 
-      // Jeda antar request
-      if (i < total - 1 && delayMs > 0 && !this.isCancelled) {
+      // Jeda antar request (Hanya jika bukan mode cepat / metadataOnly dan delayMs > 0)
+      if (i < total - 1 && delayMs > 0 && !metadataOnly && !this.isCancelled) {
         onProgress({
           index,
           total,

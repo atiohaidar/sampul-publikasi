@@ -271,11 +271,11 @@ class TabAutomator {
       if (this.isSkipped) throw new Error('Dilewati oleh pengguna');
       if (this.isCancelled) throw new Error('Dibatalkan');
 
-      await this.sleep(1200);
+      await this.sleep(metadataOnly ? 200 : 800);
 
       let currentTab = loadedTab || await this.getTab(tabId);
       if (!currentTab) {
-        await this.sleep(1000);
+        await this.sleep(500);
         currentTab = await this.getTab(tabId);
       }
       if (!currentTab) {
@@ -563,7 +563,7 @@ class TabAutomator {
 
         await this.updateTabUrl(tabId, publisherUrl, activeTab);
         await this.waitForTabLoad(tabId, timeoutMs);
-        await this.sleep(1500);
+        await this.sleep(metadataOnly ? 300 : 1200);
 
         // Cek jika muncul tantangan verifikasi robot (Cloudflare/CAPTCHA) saat masuk ke publisher
         await this.waitForRobotVerification(tabId, onStatus);
@@ -2296,8 +2296,8 @@ class TabAutomator {
       this.currentTabId = null;
       if (tid) {
         try {
-          if (activeTab && !this.isSkipped && !this.isCancelled) {
-            await this.sleep(800);
+          if (activeTab && !metadataOnly && !this.isSkipped && !this.isCancelled) {
+            await this.sleep(400);
           }
           await this.safeRemoveTab(tid);
         } catch (e) {}

@@ -335,13 +335,40 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const isMetaOnly = popModeMetaOnly ? popModeMetaOnly.checked : !chkDownloadCovers.checked;
 
+    const popupLiveTableBox = document.getElementById('popupLiveTableBox');
+    const popupLiveTableBody = document.getElementById('popupLiveTableBody');
+    const popupLiveCount = document.getElementById('popupLiveCount');
+    const btnPopupCopyTable = document.getElementById('btnPopupCopyTable');
+
+    if (popupLiveTableBody) popupLiveTableBody.innerHTML = '';
+    if (popupLiveCount) popupLiveCount.textContent = '0';
+    if (popupLiveTableBox) popupLiveTableBox.classList.remove('hidden');
+
+    function appendPopupTableRow(book) {
+      if (!popupLiveTableBody) return;
+      const tr = document.createElement('tr');
+      tr.style.borderBottom = '1px solid #f1f5f9';
+      const idVal = book.customId || book.id || book.index || '-';
+      const isOk = book.status === 'Success' || !String(book.status).startsWith('Gagal');
+      tr.innerHTML = `
+        <td style="padding:3px 5px;font-weight:bold;color:#334155;">${escapeHtml(String(idVal))}</td>
+        <td style="padding:3px 5px;font-family:monospace;color:#025e8d;">${escapeHtml(book.isbnElectronic || '-')}</td>
+        <td style="padding:3px 5px;font-family:monospace;color:#475569;">${escapeHtml(book.isbnPrint || '-')}</td>
+        <td style="padding:3px 5px;color:#15803d;">${escapeHtml(book.city || '-')}</td>
+      `;
+      popupLiveTableBody.appendChild(tr);
+      if (popupLiveCount) {
+        popupLiveCount.textContent = (scraperEngine && scraperEngine.results) ? scraperEngine.results.length : '';
+      }
+    }
+
     await scraperEngine.run({
       urls: entries,
       downloadCovers: !isMetaOnly,
       metadataOnly: isMetaOnly,
       subfolder: subfolderInput.value.trim() || 'book-covers',
       namingPattern: namingPatternSelect.value,
-      delayMs: 1500,
+      delayMs: isMetaOnly ? 0 : 500,
       activeTab: chkActiveTab ? chkActiveTab.checked : true,
 
       onProgress: (info) => {
@@ -355,12 +382,14 @@ document.addEventListener('DOMContentLoaded', () => {
         successCount++;
         statSuccess.textContent = successCount;
         liveStatusMsg.textContent = `✓ Sukses: ${book.title}`;
+        appendPopupTableRow(book);
       },
 
       onItemError: (failedItem, err) => {
         failedCount++;
         statFailed.textContent = failedCount;
         liveStatusMsg.textContent = `✕ Gagal: ${failedItem.status || failedItem.sourceUrl}`;
+        appendPopupTableRow(failedItem);
       },
 
       onFinished: (summary) => {
@@ -451,12 +480,65 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Export CSV button
   btnExportCsv.addEventListener('click', () => {
-    if (scrapedResults.length === 0) {
+    const currentList = (scraperEngine && scraperEngine.results && scraperEngine.results.length > 0)
+      ? scraperEngine.results
+      : scrapedResults;
+    if (currentList.length === 0) {
       alert('Belum ada data yang berhasil di-scrape.');
       return;
     }
-    downloadCsv(scrapedResults, 'metadata_scopus_springer_ieee.csv');
+    downloadCsv(currentList, 'metadata_scopus_springer_ieee.csv');
   });
+
+  // Helper Salin Tabel di Popup
+  const btnPopupCopyTable = document.getElementById('btnPopupCopyTable');
+  if (btnPopupCopyTable) {
+    btnPopupCopyTable.addEventListener('click', () => {
+      const currentList = (scraperEngine && scraperEngine.results && scraperEngine.results.length > 0)
+        ? scraperEngine.results
+        : scrapedResults;
+      if (currentList.length === 0) {
+        alert('Belum ada data tabel yang bisa disalin.');
+        return;
+      }
+
+      const headers = ['No/ID', 'Judul Buku / Prosiding', 'Judul Paper / Bab', 'Penerbit', 'Kota / Lokasi', 'ISBN Electronic', 'ISBN Print', 'ISBN Gabungan', 'Tahun', 'DOI', 'Status', 'Link Sumber'];
+      const rows = currentList.map((item, idx) => {
+        const idVal = item.customId || item.id || (idx + 1);
+        return [
+          idVal,
+          item.title || '',
+          item.chapterTitle || '',
+          item.publisher || '',
+          item.city || '',
+          item.isbnElectronic || '',
+          item.isbnPrint || '',
+          item.isbn || '',
+          item.year || '',
+          item.doi || '',
+          item.status || '',
+          item.scopusUrl || item.sourceUrl || item.bookUrl || ''
+        ].map(val => String(val || '').replace(/[\t\r\n]+/g, ' ').trim()).join('\t');
+      });
+
+      const tsvContent = [headers.join('\t'), ...rows].join('\n');
+      navigator.clipboard.writeText(tsvContent).then(() => {
+        const orig = btnPopupCopyTable.innerHTML;
+        btnPopupCopyTable.innerHTML = '✓ Disalin!';
+        setTimeout(() => { btnPopupCopyTable.innerHTML = orig; }, 1800);
+      }).catch(() => {
+        const ta = document.createElement('textarea');
+        ta.value = tsvContent;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        const orig = btnPopupCopyTable.innerHTML;
+        btnPopupCopyTable.innerHTML = '✓ Disalin!';
+        setTimeout(() => { btnPopupCopyTable.innerHTML = orig; }, 1800);
+      });
+    });
+  }
 
   // Salin Nomor Gagal di Popup
   if (btnPopupCopyErrorNums) {

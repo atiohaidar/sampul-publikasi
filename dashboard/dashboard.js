@@ -563,7 +563,7 @@ document.addEventListener('DOMContentLoaded', () => {
       savePngFolder: !isMetaOnly && (dashChkPngFolder ? dashChkPngFolder.checked : true),
       subfolderPng: dashSubfolderPng ? dashSubfolderPng.value.trim() : 'book-covers-png',
       namingPattern: dashNamingPattern.value,
-      delayMs: Math.max(500, Math.floor(delaySeconds * 1000)),
+      delayMs: isMetaOnly ? 0 : Math.max(0, Math.floor(delaySeconds * 1000)),
       activeTab: shouldFocusTab,
 
       onProgress: (info) => {
@@ -648,12 +648,11 @@ document.addEventListener('DOMContentLoaded', () => {
     btnDashRetryFailed.addEventListener('click', () => {
       const failedUrls = scraperEngine ? scraperEngine.getFailedUrls() : [];
       if (failedUrls.length === 0) {
-        alert('Tidak ada link yang gagal untuk dicoba ulang.');
+        alert('Tidak ada link gagal yang perlu diulang.');
         return;
       }
-      dashUrlInput.value = failedUrls.join('\n');
+      dashInputUrls.value = failedUrls.join('\n');
       updateUrlCount();
-      btnDashRetryFailed.classList.add('hidden');
       btnDashStart.click();
     });
   }
@@ -666,13 +665,97 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Export CSV button
+  // Helper untuk menyalin data ke Clipboard dalam format TSV (Excel / Google Sheets)
+  function copyResultsToClipboard(resultsList, sourceButton = null) {
+    if (!resultsList || resultsList.length === 0) {
+      alert('Belum ada data tabel yang bisa disalin.');
+      return;
+    }
+
+    const headers = ['No/ID', 'Judul Buku / Prosiding', 'Judul Paper / Bab', 'Penerbit', 'Kota / Lokasi', 'ISBN Electronic', 'ISBN Print', 'ISBN Gabungan', 'Tahun', 'DOI', 'Status', 'Link Sumber'];
+    const rows = resultsList.map((item, idx) => {
+      const idVal = item.customId || item.id || (idx + 1);
+      return [
+        idVal,
+        item.title || '',
+        item.chapterTitle || '',
+        item.publisher || '',
+        item.city || '',
+        item.isbnElectronic || '',
+        item.isbnPrint || '',
+        item.isbn || '',
+        item.year || '',
+        item.doi || '',
+        item.status || '',
+        item.scopusUrl || item.sourceUrl || item.bookUrl || ''
+      ].map(val => String(val || '').replace(/[\t\r\n]+/g, ' ').trim()).join('\t');
+    });
+
+    const tsvContent = [headers.join('\t'), ...rows].join('\n');
+
+    navigator.clipboard.writeText(tsvContent).then(() => {
+      if (sourceButton) {
+        const originalText = sourceButton.innerHTML;
+        sourceButton.innerHTML = '✅ Berhasil Disalin!';
+        sourceButton.style.background = '#dcfce7';
+        sourceButton.style.borderColor = '#86efac';
+        setTimeout(() => {
+          sourceButton.innerHTML = originalText;
+          sourceButton.style.background = '';
+          sourceButton.style.borderColor = '';
+        }, 2000);
+      }
+    }).catch(err => {
+      const ta = document.createElement('textarea');
+      ta.value = tsvContent;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      if (sourceButton) {
+        const originalText = sourceButton.innerHTML;
+        sourceButton.innerHTML = '✅ Berhasil Disalin!';
+        setTimeout(() => { sourceButton.innerHTML = originalText; }, 2000);
+      }
+    });
+  }
+
+  // Tombol Salin Tabel di Header Dashboard Table
+  const btnCopyDashTable = document.getElementById('btnCopyDashTable');
+  if (btnCopyDashTable) {
+    btnCopyDashTable.addEventListener('click', () => {
+      const currentList = (scraperEngine && scraperEngine.results && scraperEngine.results.length > 0)
+        ? scraperEngine.results
+        : scrapedResults;
+      copyResultsToClipboard(currentList, btnCopyDashTable);
+    });
+  }
+
+  // Tombol Unduh CSV di Header Dashboard Table
+  const btnDashExportCsvHeader = document.getElementById('btnDashExportCsvHeader');
+  if (btnDashExportCsvHeader) {
+    btnDashExportCsvHeader.addEventListener('click', () => {
+      const currentList = (scraperEngine && scraperEngine.results && scraperEngine.results.length > 0)
+        ? scraperEngine.results
+        : scrapedResults;
+      if (currentList.length === 0) {
+        alert('Belum ada data untuk diekspor.');
+        return;
+      }
+      downloadCsv(currentList, 'metadata_scopus_springer_ieee.csv');
+    });
+  }
+
+  // Export CSV button di sidebar
   btnDashExportCsv.addEventListener('click', () => {
-    if (scrapedResults.length === 0) {
+    const currentList = (scraperEngine && scraperEngine.results && scraperEngine.results.length > 0)
+      ? scraperEngine.results
+      : scrapedResults;
+    if (currentList.length === 0) {
       alert('Belum ada data untuk diekspor.');
       return;
     }
-    downloadCsv(scrapedResults, 'metadata_scopus_springer_ieee.csv');
+    downloadCsv(currentList, 'metadata_scopus_springer_ieee.csv');
   });
 
   updateUrlCount();
