@@ -481,6 +481,19 @@ class TabAutomator {
                 return;
               }
 
+              // Jika mode metadata only atau tidak ada tombol publisher tapi data sidebar sudah terbaca:
+              if (elapsed >= (isMetaOnly ? 1200 : 2500) && (isbnsFoundCount > 0 || isCityFound || isFlyoutOpen)) {
+                const titleEl = document.querySelector('h1, h2, .document-title');
+                resolve({
+                  success: true,
+                  fastMetaFound: isbnsFoundCount > 0,
+                  publisherUrl: '',
+                  paperTitle: titleEl ? titleEl.textContent.trim() : '',
+                  html: document.documentElement ? document.documentElement.outerHTML : ''
+                });
+                return;
+              }
+
               elapsed += INTERVAL;
               if (elapsed >= MAX_WAIT) {
                 const bodyText = document.body ? document.body.innerText : '';
@@ -496,9 +509,10 @@ class TabAutomator {
                 }
 
                 resolve({
-                  success: isbnsFoundCount > 0,
-                  fastMetaFound: isbnsFoundCount > 0,
-                  error: isbnsFoundCount > 0 ? null : 'Tidak dapat menemukan link View at Publisher atau data ISBN di Scopus ini.',
+                  success: (isbnsFoundCount > 0 || isFlyoutOpen),
+                  fastMetaFound: (isbnsFoundCount > 0 || isFlyoutOpen),
+                  publisherUrl: '',
+                  error: (isbnsFoundCount > 0 || isFlyoutOpen) ? null : 'Tidak dapat menemukan link View at Publisher atau data ISBN di Scopus ini.',
                   html: document.documentElement ? document.documentElement.outerHTML : ''
                 });
                 return;
