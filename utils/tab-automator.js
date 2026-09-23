@@ -61,6 +61,7 @@ class TabAutomator {
   async waitForTabLoad(tabId, timeoutMs = 28000) {
     return new Promise((resolve) => {
       let isResolved = false;
+      let consecutiveMisses = 0;
       const startTime = Date.now();
 
       const finish = (tab) => {
@@ -77,13 +78,13 @@ class TabAutomator {
 
       const listener = (id, changeInfo, tab) => {
         if (id === tabId && changeInfo.status === 'complete') {
-          finish(tab);
+          setTimeout(() => finish(tab), 300);
         }
       };
 
       const removeListener = (closedTabId) => {
         if (closedTabId === tabId) {
-          finish(null); // Tab ditutup, langsung akhiri tanpa menunggu timeout
+          finish(null); // Tab benar-benar ditutup
         }
       };
 
@@ -95,19 +96,25 @@ class TabAutomator {
       }
 
       this.getTab(tabId).then((t) => {
-        if (!t) {
-          finish(null);
-        } else if (t.status === 'complete') {
-          setTimeout(() => finish(t), 800);
+        if (t && t.status === 'complete' && t.url && !t.url.startsWith('chrome://') && t.url !== 'about:blank') {
+          setTimeout(() => finish(t), 500);
         }
       });
 
       const fallbackTimer = setInterval(async () => {
         const tab = await this.getTab(tabId);
         if (!tab) {
-          finish(null); // Tab sudah tidak ada
-        } else if (Date.now() - startTime > timeoutMs) {
-          finish(tab);
+          consecutiveMisses++;
+          if (consecutiveMisses >= 4) {
+            finish(null); // Tab benar-benar hilang setelah 4x pengecekan berturut-turut (2 detik)
+          }
+        } else {
+          consecutiveMisses = 0;
+          if (tab.status === 'complete' && tab.url && !tab.url.startsWith('chrome://') && tab.url !== 'about:blank') {
+            finish(tab);
+          } else if (Date.now() - startTime > timeoutMs) {
+            finish(tab);
+          }
         }
       }, 500);
     });
@@ -263,12 +270,14 @@ class TabAutomator {
       const loadedTab = await this.waitForTabLoad(tabId, timeoutMs);
       if (this.isSkipped) throw new Error('Dilewati oleh pengguna');
       if (this.isCancelled) throw new Error('Dibatalkan');
-      if (!loadedTab) {
-        throw new Error('Tab ditutup sebelum selesai memuat halaman.');
-      }
+
       await this.sleep(1200);
 
-      let currentTab = await this.getTab(tabId);
+      let currentTab = loadedTab || await this.getTab(tabId);
+      if (!currentTab) {
+        await this.sleep(1000);
+        currentTab = await this.getTab(tabId);
+      }
       if (!currentTab) {
         throw new Error('Tab telah ditutup.');
       }
@@ -2290,10 +2299,17 @@ class TabAutomator {
     return new Promise((resolve) => {
       try {
         chrome.tabs.get(tabId, (t) => {
-          if (chrome.runtime.lastError) {
-            resolve(null);
+          if (chrome.runtime.lastError || !t) {
+            chrome.tabs.query({}, (allTabs) => {
+              if (chrome.runtime.lastError || !allTabs) {
+                resolve(null);
+              } else {
+                const found = allTabs.find(tabItem => tabItem.id === tabId);
+                resolve(found || null);
+              }
+            });
           } else {
-            resolve(t || null);
+            resolve(t);
           }
         });
       } catch (e) {
