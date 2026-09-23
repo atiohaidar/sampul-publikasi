@@ -56,7 +56,8 @@ function sanitizeIsbn(str) {
  */
 function cleanCityOrLocation(str) {
   if (!str) return '';
-  let clean = str.replace(/^(?:Conference\s*Location|Location|City|Venue|Held\s*in)[\s:]*/i, '')
+  let clean = str.replace(/^(?:Conference\s*Location|Conference\s*City|Location|City|Venue|Held\s*in)[\s:]*/i, '')
+                 .replace(/^(?:Hybrid|Virtual|Online)\s*,\s*/i, '')
                  .replace(/[\r\n\t]+/g, ' ')
                  .replace(/\s{2,}/g, ' ')
                  .trim();
@@ -72,6 +73,9 @@ function cleanCityOrLocation(str) {
 
   // Hilangkan sisa tanggal di depan jika masih ada
   clean = clean.replace(/^(?:\d{1,2}\s*[-–—]\s*\d{1,2}\s+[A-Za-z]+\s+\d{4}|\d{1,2}\s+[A-Za-z]+\s+\d{4}|\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\s*,?\s*/i, '');
+
+  // Hilangkan sisa Hybrid / Virtual di depan jika ada lagi
+  clean = clean.replace(/^(?:Hybrid|Virtual|Online)\s*,\s*/i, '');
 
   // Hilangkan karakter pembatas yang tertinggal
   clean = clean.replace(/^[,;.\-–—\s]+|[,;.\-–—\s]+$/g, '');
@@ -239,7 +243,7 @@ function extractScopusMetadata(docOrHtml) {
 
     // 4. Ekstrak Conference Location / City dari Scopus
     const locEl = doc.querySelector(
-      '[data-testid*="conference-location"], [data-testid*="location"], .DetailedInformationFlyout_metadata___Juk7 [data-testid*="location"]'
+      '[data-testid="source-info-conference-city"], [data-testid*="conference-city"], [data-testid*="conference-location"], [data-testid*="location"], .DetailedInformationFlyout_metadata___Juk7 [data-testid*="location"]'
     );
     if (locEl) {
       city = cleanCityOrLocation(locEl.textContent);

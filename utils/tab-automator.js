@@ -278,18 +278,20 @@ class TabAutomator {
       // TAHAP 1: Jika di Scopus (scopus.com)
       // ========================================================
       if (currentUrl.includes('scopus.com')) {
-        onStatus('Halaman Scopus: Memeriksa sidebar informasi & tombol View at Publisher...');
+        onStatus('Halaman Scopus: Memeriksa sidebar informasi & link penerbit...');
 
         const scopusResult = await this.executeInTab(tabId, (isMetaOnly) => {
           return new Promise((resolve) => {
             const MAX_WAIT = isMetaOnly ? 9000 : 12000;
             const INTERVAL = 300;
             let elapsed = 0;
+            let flyoutOpened = false;
+            let flyoutClosed = false;
 
             const poll = () => {
-              // 1. Klik tombol "Show all information" / "Detailed information" jika sidebar belum terbuka
+              // 1. Buka sidebar "Show all information" / "Detailed information" jika belum pernah dibuka
               const isFlyoutOpen = !!document.querySelector('.Flyout_main__klFeU, [class*="DetailedInformationFlyout"], [data-testid="flyout-main"]');
-              if (!isFlyoutOpen) {
+              if (!isFlyoutOpen && !flyoutOpened) {
                 const infoButtons = Array.from(document.querySelectorAll('button, a')).filter(btn => {
                   const text = (btn.innerText || btn.textContent || '').trim().toLowerCase();
                   return text.includes('show all information') ||
@@ -302,15 +304,17 @@ class TabAutomator {
                 for (const btn of infoButtons) {
                   if (!btn._scopusClicked) {
                     btn._scopusClicked = true;
+                    flyoutOpened = true;
                     try { btn.click(); } catch (e) {}
                     break;
                   }
                 }
               }
 
-              // Periksa kelengkapan metadata Scopus langsung dari elemen DOM
+              // 2. Periksa kelengkapan metadata Scopus langsung dari elemen DOM / Flyout
               let isbnsFoundCount = 0;
               let isCityFound = false;
+              let flyoutDoi = '';
 
               const isbnEl = document.querySelector('[data-testid="source-info-isbn"], [data-testid="document-info-isbn"]');
               if (isbnEl && isbnEl.textContent) {
@@ -338,8 +342,8 @@ class TabAutomator {
                 }
               }
 
-              const locEl = document.querySelector('[data-testid*="conference-location"], [data-testid*="location"]');
-              if (locEl && locEl.textContent && locEl.textContent.trim().length > 3) {
+              const locEl = document.querySelector('[data-testid="source-info-conference-city"], [data-testid*="conference-city"], [data-testid*="conference-location"], [data-testid*="location"]');
+              if (locEl && locEl.textContent && locEl.textContent.trim().length > 2) {
                 isCityFound = true;
               }
               if (!isCityFound) {
@@ -350,17 +354,22 @@ class TabAutomator {
                 });
                 if (locDt) {
                   const dd = locDt.nextElementSibling || locDt.parentElement.querySelector('dd');
-                  if (dd && dd.textContent && dd.textContent.trim().length > 3) {
+                  if (dd && dd.textContent && dd.textContent.trim().length > 2) {
                     isCityFound = true;
                   }
                 }
               }
 
-              // Metadata Scopus LENGKAP jika ada 2 ISBN (Elec & Print) ATAU ada ISBN + Lokasi Kota
-              const isScopusMetaComplete = (isbnsFoundCount >= 2) || (isbnsFoundCount >= 1 && isCityFound);
+              const doiEl = document.querySelector('[data-testid="document-info-doi"]');
+              if (doiEl && doiEl.textContent && doiEl.textContent.trim().startsWith('10.')) {
+                flyoutDoi = doiEl.textContent.trim();
+              }
 
-              // Jika mode metadata only (Cepat) dan data Scopus LENGKAP:
-              if (isMetaOnly && isScopusMetaComplete && elapsed >= 800) {
+              // Metadata Scopus dianggap 100% LENGKAP jika sudah ada minimal 2 ISBN (Elec & Print) DAN Lokasi Kota
+              const isScopusMetaFullyComplete = (isbnsFoundCount >= 2 && isCityFound);
+
+              // Jika mode metadata only (Cepat) dan data Scopus 100% LENGKAP:
+              if (isMetaOnly && isScopusMetaFullyComplete && elapsed >= 800) {
                 const titleEl = document.querySelector('h1, h2, .document-title');
                 resolve({
                   success: true,
@@ -371,43 +380,61 @@ class TabAutomator {
                 return;
               }
 
-              // 2. Buka dropdown menu "Full text" jika ada dan belum terbuka
-              const toolbar = document.querySelector('[class*="DocumentToolbar"], .DocumentToolbar_wrapper__Cfual, .document-toolbar');
-              const searchScope = toolbar || document;
+              // 3. Jika hanya ada 1 ISBN / data belum lengkap, cari link publisher
+              let publisherUrl = '';
 
-              const fullTextBtn = Array.from(searchScope.querySelectorAll('button')).find(btn => {
-                const text = (btn.innerText || btn.textContent || '').trim().toLowerCase();
-                return text.includes('full text') && !text.includes('view pdf');
-              });
-
-              const isMenuOpen = !!document.querySelector('[class*="Menu_menu"], [role="menu"], [class*="Stack_stack"] a');
-              if (fullTextBtn && !isMenuOpen && !fullTextBtn._clicked) {
-                fullTextBtn._clicked = true;
-                try { fullTextBtn.click(); } catch (e) {}
+              // 3a. Jika DOI ada di flyout, kita bisa langsung membentuk link publisher
+              if (flyoutDoi) {
+                publisherUrl = 'https://doi.org/' + flyoutDoi;
               }
 
-              // 3. Cari link "View at Publisher"
-              const allElements = Array.from(document.querySelectorAll(
-                '[class*="DocumentToolbar"] a, [class*="DocumentToolbar"] button, [class*="Menu_menu"] a, [role="menu"] a, [role="menuitem"], [class*="Stack_stack"] a, a'
-              ));
-
-              const pubEl = allElements.find(el => {
-                const text = (el.innerText || el.textContent || '').trim().toLowerCase();
-                const isViewPdf = text.includes('view pdf');
-                const isViewPub = text.includes('view at publisher') || (text.includes('view') && text.includes('publisher'));
-                return isViewPub && !isViewPdf;
-              });
-
-              let publisherUrl = '';
-              if (pubEl) {
-                if (pubEl.href && !pubEl.href.startsWith('javascript:')) {
-                  publisherUrl = pubEl.href;
-                } else if (pubEl.getAttribute('href') && !pubEl.getAttribute('href').startsWith('javascript:')) {
-                  publisherUrl = pubEl.getAttribute('href');
+              // 3b. Tutup flyout modal setelah membaca data agar tidak menutupi toolbar Scopus
+              if (isFlyoutOpen && !flyoutClosed && (flyoutDoi || elapsed >= 800)) {
+                const closeBtn = document.querySelector('[data-testid="flyout-close-button"], .Flyout_closeButton__9jeNZ button, button[aria-label="Close"]');
+                if (closeBtn) {
+                  flyoutClosed = true;
+                  try { closeBtn.click(); } catch (e) {}
                 }
               }
 
-              // 4. Cek link DOI atau link penerbit langsung di dokumen
+              // 3c. Buka dropdown menu "Full text" jika ada dan belum terbuka
+              if (!publisherUrl) {
+                const toolbar = document.querySelector('[class*="DocumentToolbar"], .DocumentToolbar_wrapper__Cfual, .document-toolbar');
+                const searchScope = toolbar || document;
+
+                const fullTextBtn = Array.from(searchScope.querySelectorAll('button')).find(btn => {
+                  const text = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+                  return text.includes('full text') && !text.includes('view pdf');
+                });
+
+                const isMenuOpen = !!document.querySelector('[class*="Menu_menu"], [role="menu"], [class*="Stack_stack"] a');
+                if (fullTextBtn && !isMenuOpen && !fullTextBtn._clicked) {
+                  fullTextBtn._clicked = true;
+                  try { fullTextBtn.click(); } catch (e) {}
+                }
+
+                // Cari link "View at Publisher"
+                const allElements = Array.from(document.querySelectorAll(
+                  '[class*="DocumentToolbar"] a, [class*="DocumentToolbar"] button, [class*="Menu_menu"] a, [role="menu"] a, [role="menuitem"], [class*="Stack_stack"] a, a'
+                ));
+
+                const pubEl = allElements.find(el => {
+                  const text = (el.innerText || el.textContent || '').trim().toLowerCase();
+                  const isViewPdf = text.includes('view pdf');
+                  const isViewPub = text.includes('view at publisher') || (text.includes('view') && text.includes('publisher'));
+                  return isViewPub && !isViewPdf;
+                });
+
+                if (pubEl) {
+                  if (pubEl.href && !pubEl.href.startsWith('javascript:')) {
+                    publisherUrl = pubEl.href;
+                  } else if (pubEl.getAttribute('href') && !pubEl.getAttribute('href').startsWith('javascript:')) {
+                    publisherUrl = pubEl.getAttribute('href');
+                  }
+                }
+              }
+
+              // 3d. Cek link DOI atau link penerbit langsung di dokumen
               if (!publisherUrl) {
                 const directPubLink = Array.from(document.querySelectorAll('a')).find(a => {
                   if (!a.href) return false;
@@ -431,6 +458,7 @@ class TabAutomator {
                 }
               }
 
+              // Jika ditemukan link publisher (dari DOI atau tombol), simpan metadata Scopus dan resolve
               if (publisherUrl) {
                 const titleEl = document.querySelector('h1, h2, .document-title');
                 resolve({
@@ -486,14 +514,14 @@ class TabAutomator {
         }
 
         // JIKA MODE METADATA ONLY (Cepat / Tanpa Cover):
-        // Jika Scopus sudah menyediakan data LENGKAP (kedua ISBN Elec & Print ada, ATAU ISBN & City ada),
+        // Jika Scopus sudah menyediakan data 100% LENGKAP (kedua ISBN Elec & Print ada DAN City ada),
         // ATAU jika memang TIDAK ADA link publisher untuk dituju:
-        const hasCompleteScopusMeta = (scopusMeta.isbnElectronic && scopusMeta.isbnPrint) || (scopusMeta.isbnElectronic && scopusMeta.city);
+        const hasCompleteScopusMeta = (scopusMeta.isbnElectronic && scopusMeta.isbnPrint && scopusMeta.city);
         const hasPublisherLink = Boolean(scopusResult && scopusResult.publisherUrl);
 
         if (metadataOnly) {
           if (hasCompleteScopusMeta || !hasPublisherLink) {
-            onStatus(`Scopus: Selesai mengambil metadata lengkap dari Scopus (ISBN: ${scopusMeta.isbnElectronic || scopusMeta.isbnPrint || '-'}, Lokasi: ${scopusMeta.city || '-'}).`);
+            onStatus(`Scopus: Selesai mengambil metadata dari Scopus (ISBN Elec: ${scopusMeta.isbnElectronic || '-'}, Print: ${scopusMeta.isbnPrint || '-'}, Lokasi: ${scopusMeta.city || '-'}).`);
             return {
               publisherType: 'Scopus',
               title: (scopusResult && scopusResult.paperTitle) || scopusMeta.sourceTitle || paperOrChapterTitle || '',
@@ -512,7 +540,7 @@ class TabAutomator {
               coverFilename: 'Tanpa Cover (Mode Cepat)'
             };
           } else {
-            onStatus(`Scopus: Data belum lengkap (hanya 1 ISBN / lokasi belum ada). Mengarahkan ke penerbit untuk melengkapi data...`);
+            onStatus(`Scopus: Data di Scopus hanya 1 ISBN. Mengarahkan ke penerbit (${scopusResult.publisherUrl}) untuk melengkapi data...`);
           }
         }
 
