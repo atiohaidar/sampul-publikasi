@@ -41,6 +41,18 @@ document.addEventListener('DOMContentLoaded', () => {
     if (namingPatternFormGroup) namingPatternFormGroup.style.opacity = isMetaOnly ? '0.45' : '1';
   }
 
+  function escapeHtml(text) {
+    if (!text) return '';
+    const map = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;'
+    };
+    return String(text).replace(/[&<>"']/g, m => map[m]);
+  }
+
   if (popModeFull) {
     popModeFull.addEventListener('change', () => {
       if (popModeFull.checked) {
