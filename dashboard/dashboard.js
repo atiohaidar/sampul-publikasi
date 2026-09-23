@@ -651,6 +651,13 @@ document.addEventListener('DOMContentLoaded', () => {
   if (tabBtnConverter) tabBtnConverter.addEventListener('click', () => switchTabMode('converter'));
   if (tabBtnMerger) tabBtnMerger.addEventListener('click', () => switchTabMode('merger'));
 
+  // Cek parameter ?tab=merger atau ?tab=converter dari URL
+  const dashUrlParams = new URLSearchParams(window.location.search);
+  const initialModeTab = dashUrlParams.get('tab');
+  if (initialModeTab && ['scraper', 'converter', 'merger'].includes(initialModeTab)) {
+    switchTabMode(initialModeTab);
+  }
+
   // ========================================================
   // LOGIKA KONVERTER FOLDER COVER KE PNG
   // ========================================================

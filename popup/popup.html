@@ -38,15 +38,29 @@
           </svg>
           <span>Popout</span>
         </button>
-        <button id="btnOpenDashboard" class="btn-icon" title="Buka Tab Layar Penuh">
+        <button id="btnOpenDashboard" class="btn-icon btn-dashboard-highlight" title="Buka Dashboard Layar Penuh (Semua Fitur)">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
             <polyline points="15 3 21 3 21 9"></polyline>
             <line x1="10" y1="14" x2="21" y2="3"></line>
           </svg>
+          <span>Dashboard</span>
         </button>
       </div>
     </header>
+
+    <!-- Menu Mode Navigasi Cepat -->
+    <div class="popup-quick-nav">
+      <button id="quickNavScraper" class="quick-nav-btn active" type="button" title="Mode Scraper Link (Aktif di sini)">
+        🌐 Scraper
+      </button>
+      <button id="quickNavConverter" class="quick-nav-btn" type="button" title="Buka Konversi Folder PNG di Tab Baru">
+        📁 Konverter PNG ↗
+      </button>
+      <button id="quickNavMerger" class="quick-nav-btn" type="button" title="Buka Penggabung CSV di Tab Baru">
+        📊 Gabung CSV ↗
+      </button>
+    </div>
 
     <!-- Info Banner (Hanya aktif jika dibuka di popup bubble biasa) -->
     <div id="popoutBanner" class="popout-banner">

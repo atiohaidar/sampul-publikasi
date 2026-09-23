@@ -214,17 +214,37 @@ document.addEventListener('DOMContentLoaded', () => {
     updateCountBadge();
   });
 
-  // Open Fullscreen Dashboard
-  btnOpenDashboard.addEventListener('click', () => {
+  // Open Fullscreen Dashboard / Modes
+  const openDashboardTab = (tabName = 'scraper') => {
     saveSettings();
+    const query = tabName && tabName !== 'scraper' ? `?tab=${tabName}` : '';
     if (typeof chrome !== 'undefined' && chrome.tabs) {
-      const dashboardUrl = chrome.runtime.getURL('dashboard/dashboard.html');
+      const dashboardUrl = chrome.runtime.getURL(`dashboard/dashboard.html${query}`);
       chrome.tabs.create({ url: dashboardUrl });
       if (isNormalPopup) window.close();
     } else {
-      window.open('../dashboard/dashboard.html', '_blank');
+      window.open(`../dashboard/dashboard.html${query}`, '_blank');
     }
-  });
+  };
+
+  btnOpenDashboard.addEventListener('click', () => openDashboardTab('scraper'));
+
+  const quickNavConverter = document.getElementById('quickNavConverter');
+  const quickNavMerger = document.getElementById('quickNavMerger');
+  const quickNavScraper = document.getElementById('quickNavScraper');
+
+  if (quickNavConverter) {
+    quickNavConverter.addEventListener('click', () => openDashboardTab('converter'));
+  }
+  if (quickNavMerger) {
+    quickNavMerger.addEventListener('click', () => openDashboardTab('merger'));
+  }
+  if (quickNavScraper) {
+    quickNavScraper.addEventListener('click', () => {
+      // Jika sudah di popup scraper, cukup scroll ke atas atau fokus
+      urlInput.focus();
+    });
+  }
 
   // Start Scraping
   btnStartScraping.addEventListener('click', async () => {
