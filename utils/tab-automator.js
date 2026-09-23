@@ -314,10 +314,16 @@ class TabAutomator {
                                       outer.includes('DetailedInformationFlyout') ||
                                       outer.includes('Flyout_main');
 
+              // Cek apakah Scopus memiliki 2 ISBN atau ISBN + Lokasi (Data Lengkap)
+              const isbnMatches = outer.match(/97[89][- ]?[0-9]{1,5}[- ]?[0-9]+[- ]?[0-9]+[- ]?[0-9Xx]/g) || [];
+              const uniqueIsbns = Array.from(new Set(isbnMatches.map(m => m.replace(/[^0-9Xx]/g, ''))));
+              const hasLocationInScopus = /conference-location|Conference\s*Location|DetailedInformationFlyout_metadata/i.test(outer);
+              const isScopusMetaComplete = (uniqueIsbns.length >= 2) || (uniqueIsbns.length >= 1 && hasLocationInScopus);
+
               // Jika mode metadata only (Cepat):
-              // Jika sidebar Scopus sudah menyediakan ISBN, selesaikan langsung tanpa harus buka web penerbit
+              // Hanya langsung selesai di Scopus jika data sudah LENGKAP (kedua ISBN ada atau ISBN + Lokasi ada)
               if (isMetaOnly) {
-                if (hasIsbnInScopus && elapsed >= 600) {
+                if (isScopusMetaComplete && elapsed >= 600) {
                   const titleEl = document.querySelector('h1, h2, .document-title');
                   resolve({
                     success: true,
@@ -356,8 +362,8 @@ class TabAutomator {
               });
 
               if (pubLink && pubLink.href && !pubLink.href.startsWith('javascript:')) {
-                // Di mode cepat, beri kesempatan 1.5 detik jika tombol detail baru diklik agar ISBN flyout sempat terbaca
-                if (isMetaOnly && elapsed < 1500 && !hasIsbnInScopus) {
+                // Di mode cepat, jika tombol detail baru diklik, tunggu sedikit agar sidebar Scopus sempat render
+                if (isMetaOnly && elapsed < 1200 && !hasIsbnInScopus) {
                   // Lanjut polling berikutnya
                 } else {
                   const titleEl = document.querySelector('h1, h2, .document-title');
@@ -390,7 +396,7 @@ class TabAutomator {
               });
 
               if (toolbarDoiLink) {
-                if (isMetaOnly && elapsed < 1500 && !hasIsbnInScopus) {
+                if (isMetaOnly && elapsed < 1200 && !hasIsbnInScopus) {
                   // Tunggu sebentar untuk Scopus sidebar
                 } else {
                   const titleEl = document.querySelector('h1, h2, .document-title');
@@ -448,10 +454,14 @@ class TabAutomator {
         }
 
         // JIKA MODE METADATA ONLY (Cepat / Tanpa Cover):
-        // Jika Scopus sudah menyediakan ISBN, ATAU tidak ada link publisher
+        // Jika Scopus sudah menyediakan data LENGKAP (kedua ISBN Elec & Print ada, ATAU ISBN & City ada),
+        // ATAU jika memang TIDAK ADA link publisher untuk dituju:
+        const hasCompleteScopusMeta = (scopusMeta.isbnElectronic && scopusMeta.isbnPrint) || (scopusMeta.isbnElectronic && scopusMeta.city);
+        const hasPublisherLink = scopusResult && scopusResult.publisherUrl;
+
         if (metadataOnly) {
-          if (scopusMeta.isbnElectronic || scopusMeta.isbnPrint || !scopusResult || !scopusResult.publisherUrl) {
-            onStatus(`Scopus: Selesai mengambil metadata dari Scopus (ISBN: ${scopusMeta.isbnElectronic || scopusMeta.isbnPrint || '-'}, Lokasi: ${scopusMeta.city || '-'}).`);
+          if ((hasCompleteScopusMeta || !hasPublisherLink) && (scopusMeta.isbnElectronic || scopusMeta.isbnPrint)) {
+            onStatus(`Scopus: Selesai mengambil metadata lengkap dari Scopus (ISBN Elec: ${scopusMeta.isbnElectronic || '-'}, Print: ${scopusMeta.isbnPrint || '-'}, Lokasi: ${scopusMeta.city || '-'}).`);
             return {
               publisherType: 'Scopus',
               title: (scopusResult && scopusResult.paperTitle) || scopusMeta.sourceTitle || paperOrChapterTitle || '',
@@ -469,6 +479,8 @@ class TabAutomator {
               coverPdfUrl: '',
               coverFilename: 'Tanpa Cover (Mode Cepat)'
             };
+          } else if (hasPublisherLink) {
+            onStatus(`Scopus: Data belum lengkap (hanya 1 ISBN / lokasi belum ada). Membuka link penerbit untuk melengkapi data...`);
           }
         }
 
