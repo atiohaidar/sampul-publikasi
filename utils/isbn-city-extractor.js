@@ -368,26 +368,25 @@ function extractIeeeDocumentMetadata(docOrHtml) {
 
   // 1. Ekstrak Electronic ISBN & Print on Demand ISBN dari block abstract-metadata-indent
   if (doc && typeof doc.querySelectorAll === 'function') {
-    const metadataDivs = doc.querySelectorAll('.abstract-metadata-indent > div, .doc-abstract-confdate ~ div');
+    const metadataDivs = doc.querySelectorAll('.abstract-metadata-indent div, .abstract-metadata-indent, .doc-abstract-confdate ~ div, .u-pb-1 div');
     metadataDivs.forEach(div => {
-      const text = div.textContent || '';
-      const spanVal = div.querySelector('.isbn-value, span');
-      const valText = spanVal ? spanVal.textContent.trim() : '';
+      const text = (div.textContent || '').trim();
 
       if (/Electronic\s*ISBN/i.test(text)) {
-        const match = valText.match(/([0-9-]{10,17}[0-9Xx])/);
+        const match = text.match(/([0-9-]{10,17}[0-9Xx])/);
         if (match && isValidIsbn(match[1])) {
           electronicIsbn = sanitizeIsbn(match[1]);
         }
-      } else if (/Print(?:\s*on\s*Demand|\(PoD\))?\s*ISBN/i.test(text)) {
-        const match = valText.match(/([0-9-]{10,17}[0-9Xx])/);
+      }
+      if (/Print(?:[\s\S]*?ISBN)/i.test(text)) {
+        const match = text.match(/([0-9-]{10,17}[0-9Xx])/);
         if (match && isValidIsbn(match[1])) {
           printIsbn = sanitizeIsbn(match[1]);
         }
       }
     });
 
-    const locEl = doc.querySelector('.doc-abstract-conferenceLoc, .stats-document-abstract-confloc');
+    const locEl = doc.querySelector('.doc-abstract-conferenceLoc, .stats-document-abstract-confloc, [class*="conferenceLoc"]');
     if (locEl) {
       city = cleanCityOrLocation(locEl.textContent);
     }
@@ -397,15 +396,15 @@ function extractIeeeDocumentMetadata(docOrHtml) {
   const htmlString = typeof docOrHtml === 'string' ? docOrHtml : (doc && doc.body ? doc.body.innerHTML : '');
   if (htmlString) {
     if (!electronicIsbn) {
-      const m = htmlString.match(/Electronic\s*ISBN:?\s*([0-9-]{10,17}[0-9Xx])/i);
+      const m = htmlString.match(/Electronic\s*ISBN\s*:?[\s\S]{0,100}?([0-9-]{10,17}[0-9Xx])/i);
       if (m && isValidIsbn(m[1])) electronicIsbn = sanitizeIsbn(m[1]);
     }
     if (!printIsbn) {
-      const m = htmlString.match(/(?:Print(?:\s*on\s*Demand|\(PoD\))?\s*ISBN):?\s*([0-9-]{10,17}[0-9Xx])/i);
+      const m = htmlString.match(/Print[\s\S]{0,40}?ISBN\s*:?[\s\S]{0,100}?([0-9-]{10,17}[0-9Xx])/i);
       if (m && isValidIsbn(m[1])) printIsbn = sanitizeIsbn(m[1]);
     }
     if (!city) {
-      const m = htmlString.match(/Conference\s*Location:?\s*([^\n\r<]+)/i);
+      const m = htmlString.match(/Conference\s*Location\s*:?[\s\S]{0,100}?([^\n\r<]{3,80})/i);
       if (m) city = cleanCityOrLocation(m[1]);
     }
   }
