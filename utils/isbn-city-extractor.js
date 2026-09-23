@@ -263,10 +263,20 @@ function extractScopusMetadata(docOrHtml) {
   }
 
   // 5. Ekstrak Source Title (Judul Buku / Prosiding)
+  let year = '';
+  let editors = '';
   if (doc && typeof doc.querySelector === 'function') {
     const sourceTitleEl = doc.querySelector('[data-testid="source-info-source-title"]');
     if (sourceTitleEl) {
       sourceTitle = sourceTitleEl.textContent.trim();
+    }
+    const yearEl = doc.querySelector('[data-testid="source-info-publication-year"], [data-testid="document-info-publication-date"]');
+    if (yearEl) {
+      year = yearEl.textContent.trim();
+    }
+    const editorsEl = doc.querySelector('[data-testid="source-info-volume-editors"]');
+    if (editorsEl) {
+      editors = editorsEl.textContent.trim();
     }
   }
 
@@ -342,7 +352,9 @@ function extractScopusMetadata(docOrHtml) {
     publisher,
     city,
     doi,
-    sourceTitle
+    sourceTitle,
+    year,
+    editors
   };
 }
 

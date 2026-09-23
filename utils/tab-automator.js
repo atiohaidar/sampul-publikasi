@@ -325,15 +325,22 @@ class TabAutomator {
               let isCityFound = false;
               let flyoutDoi = '';
 
+              const countValidIsbnsInText = (text) => {
+                if (!text) return 0;
+                const parts = text.split(/[,;\n\r|]+/).map(p => p.trim()).filter(Boolean);
+                let count = 0;
+                for (const p of parts) {
+                  const d = p.replace(/[^0-9Xx]/g, '');
+                  if (d.length === 10 || (d.length === 13 && (d.startsWith('978') || d.startsWith('979')))) {
+                    count++;
+                  }
+                }
+                return count;
+              };
+
               const isbnEl = document.querySelector('[data-testid="source-info-isbn"], [data-testid="document-info-isbn"]');
               if (isbnEl && isbnEl.textContent) {
-                const cleanIsbnStr = isbnEl.textContent.trim();
-                const matches = cleanIsbnStr.match(/(?:97[89][- ]?)?[0-9]{1,5}[- ]?[0-9]+[- ]?[0-9]+[- ]?[0-9Xx]/g) || [];
-                const validMatches = matches.filter(m => {
-                  const d = m.replace(/[^0-9Xx]/g, '');
-                  return d.length === 10 || d.length === 13;
-                });
-                isbnsFoundCount = validMatches.length;
+                isbnsFoundCount = countValidIsbnsInText(isbnEl.textContent);
               }
               if (!isbnsFoundCount) {
                 const dts = Array.from(document.querySelectorAll('dl dt'));
@@ -341,12 +348,7 @@ class TabAutomator {
                 if (isbnDt) {
                   const dd = isbnDt.nextElementSibling || isbnDt.parentElement.querySelector('dd');
                   if (dd && dd.textContent) {
-                    const matches = dd.textContent.match(/(?:97[89][- ]?)?[0-9]{1,5}[- ]?[0-9]+[- ]?[0-9]+[- ]?[0-9Xx]/g) || [];
-                    const validMatches = matches.filter(m => {
-                      const d = m.replace(/[^0-9Xx]/g, '');
-                      return d.length === 10 || d.length === 13;
-                    });
-                    isbnsFoundCount = validMatches.length;
+                    isbnsFoundCount = countValidIsbnsInText(dd.textContent);
                   }
                 }
               }
@@ -374,11 +376,11 @@ class TabAutomator {
                 flyoutDoi = doiEl.textContent.trim();
               }
 
-              // Metadata Scopus dianggap 100% LENGKAP jika sudah ada minimal 2 ISBN (Elec & Print) DAN Lokasi Kota
-              const isScopusMetaFullyComplete = (isbnsFoundCount >= 2 && isCityFound);
+              // Metadata Scopus dianggap LENGKAP jika sudah ada minimal 2 ISBN ATAU (ada 1 ISBN DAN Lokasi Kota)
+              const isScopusMetaFullyComplete = (isbnsFoundCount >= 2) || (isbnsFoundCount >= 1 && isCityFound);
 
-              // Jika mode metadata only (Cepat) dan data Scopus 100% LENGKAP:
-              if (isMetaOnly && isScopusMetaFullyComplete && elapsed >= 800) {
+              // Jika mode metadata only (Cepat) dan data Scopus lengkap:
+              if (isMetaOnly && isScopusMetaFullyComplete && elapsed >= 400) {
                 const titleEl = document.querySelector('h1, h2, .document-title');
                 resolve({
                   success: true,
