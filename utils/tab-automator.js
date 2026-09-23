@@ -523,17 +523,16 @@ class TabAutomator {
         }
 
         // JIKA MODE METADATA ONLY (Cepat / Tanpa Cover):
-        // Jika Scopus sudah menyediakan data ISBN (Elec/Print) DAN Lokasi Konferensi (City),
+        // Jika Scopus sudah menyediakan data 100% LENGKAP (kedua ISBN Elec & Print ada DAN City ada),
         // ATAU jika memang TIDAK ADA link publisher untuk dituju:
-        const hasScopusIsbn = Boolean(scopusMeta.isbnElectronic || scopusMeta.isbnPrint);
-        const hasCompleteScopusMeta = hasScopusIsbn && Boolean(scopusMeta.city);
+        const hasCompleteScopusMeta = (scopusMeta.isbnElectronic && scopusMeta.isbnPrint && scopusMeta.city);
         const hasPublisherLink = Boolean(scopusResult && scopusResult.publisherUrl);
 
         if (metadataOnly) {
           if (hasCompleteScopusMeta || !hasPublisherLink) {
-            onStatus(`Scopus: Metadata lengkap dari Scopus (ISBN Elec: ${scopusMeta.isbnElectronic || '-'}, Print: ${scopusMeta.isbnPrint || '-'}, Lokasi: ${scopusMeta.city || '-'}).`);
+            onStatus(`Scopus: Selesai mengambil metadata dari Scopus (ISBN Elec: ${scopusMeta.isbnElectronic || '-'}, Print: ${scopusMeta.isbnPrint || '-'}, Lokasi: ${scopusMeta.city || '-'}).`);
             return {
-              publisherType: scopusMeta.publisher || 'Scopus',
+              publisherType: 'Scopus',
               title: (scopusResult && scopusResult.paperTitle) || scopusMeta.sourceTitle || paperOrChapterTitle || '',
               chapterTitle: (scopusResult && scopusResult.paperTitle) || '',
               publisher: scopusMeta.publisher || 'Scopus',
@@ -550,7 +549,7 @@ class TabAutomator {
               coverFilename: 'Tanpa Cover (Mode Cepat)'
             };
           } else {
-            onStatus(`Scopus: Menuju penerbit (${scopusResult.publisherUrl}) untuk melengkapi lokasi/detail prosiding...`);
+            onStatus(`Scopus: Data di Scopus hanya 1 ISBN. Mengarahkan ke penerbit (${scopusResult.publisherUrl}) untuk melengkapi data...`);
           }
         }
 
@@ -2129,35 +2128,35 @@ class TabAutomator {
           };
         });
 
-        if (genericData && (genericData.coverUrl || metadataOnly || genericData.title)) {
-          onStatus(`Mengekstrak metadata Publisher: ${genericData.title}...`);
+        if (genericData && genericData.coverUrl) {
+          onStatus(`Ditemukan Cover Publisher: ${genericData.title}. Menyiapkan unduhan...`);
           let genParsedMeta = {};
           if (genericData.html && typeof extractGenericPublicationMetadata === 'function') {
             try {
-              genParsedMeta = extractGenericPublicationMetadata(genericData.html, { sourceUrl: currentUrl, doi: scopusMeta.doi });
+              genParsedMeta = extractGenericPublicationMetadata(genericData.html, { sourceUrl: currentUrl });
             } catch (e) {}
           }
-          const finalIsbnElec = scopusMeta.isbnElectronic || genParsedMeta.isbnElectronic || '';
-          const finalIsbnPrint = scopusMeta.isbnPrint || genParsedMeta.isbnPrint || '';
-          const finalCity = scopusMeta.city || genParsedMeta.city || '';
-          const finalIsbn = finalIsbnElec || finalIsbnPrint || (scopusMeta.isbn || '') || (genericData.isbn && typeof isValidIsbn === 'function' && isValidIsbn(genericData.isbn) ? genericData.isbn : '');
+          const finalIsbnElec = genParsedMeta.isbnElectronic || scopusMeta.isbnElectronic || '';
+          const finalIsbnPrint = genParsedMeta.isbnPrint || scopusMeta.isbnPrint || '';
+          const finalCity = genParsedMeta.city || scopusMeta.city || '';
+          const finalIsbn = finalIsbnElec || finalIsbnPrint || (genericData.isbn && typeof isValidIsbn === 'function' && isValidIsbn(genericData.isbn) ? genericData.isbn : '');
 
           return {
-            publisherType: scopusMeta.publisher || genParsedMeta.publisher || 'General',
-            title: genericData.title || scopusMeta.sourceTitle || paperOrChapterTitle,
+            publisherType: 'General',
+            title: genericData.title,
             chapterTitle: paperOrChapterTitle,
             subtitle: '',
-            coverUrl: metadataOnly ? '' : (genericData.coverUrl || ''),
+            coverUrl: metadataOnly ? '' : genericData.coverUrl,
             coverFilename: metadataOnly ? 'Tanpa Cover (Mode Cepat)' : '',
             isbnElectronic: finalIsbnElec,
             isbnPrint: finalIsbnPrint,
             city: finalCity,
             isbn: finalIsbn,
-            doi: scopusMeta.doi || genParsedMeta.doi || '',
-            year: genericData.year || scopusMeta.year || '',
+            doi: genParsedMeta.doi || scopusMeta.doi || '',
+            year: genericData.year,
             editors: '',
             series: 'General Publication',
-            publisher: scopusMeta.publisher || genParsedMeta.publisher || 'General Publisher',
+            publisher: genParsedMeta.publisher || 'General Publisher',
             scopusUrl: scopusUrl,
             bookUrl: currentUrl,
             sourceUrl: currentUrl,

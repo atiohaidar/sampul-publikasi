@@ -390,9 +390,26 @@ textarea:focus {
   display: flex;
   flex-direction: column;
   height: 100%;
+  min-height: 0;
+  min-width: 0;
   overflow: hidden;
   padding: 20px 24px;
   gap: 16px;
+}
+
+.main-tab-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  gap: 16px;
+}
+
+.main-tab-content.hidden {
+  display: none !important;
 }
 
 /* Metrics Bar */
@@ -508,6 +525,7 @@ textarea:focus {
   border: 1px solid var(--border);
   border-radius: 8px;
   flex: 1;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -520,6 +538,7 @@ textarea:focus {
   justify-content: space-between;
   align-items: center;
   background: #fdfdfd;
+  flex-shrink: 0;
 }
 
 .table-header-row h3 {
@@ -534,7 +553,9 @@ textarea:focus {
 
 .table-scroll {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
+  overflow-x: auto;
 }
 
 .data-table {
