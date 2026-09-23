@@ -588,14 +588,17 @@ class TabAutomator {
 
               const poll = () => {
                 // Buka tombol accordion ISBN jika tertutup
-                const allButtons = Array.from(document.querySelectorAll('button'));
+                const allButtons = Array.from(document.querySelectorAll('button, [role="button"], a'));
                 const isbnBtn = allButtons.find(b => {
                   const text = (b.innerText || b.textContent || '').trim();
                   return /ISBN\s*Information/i.test(text);
                 });
                 if (isbnBtn && isbnBtn.getAttribute('aria-expanded') !== 'true') {
                   try {
+                    isbnBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
                     isbnBtn.click();
+                    isbnBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                    isbnBtn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
                     isbnBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
                   } catch (e) {}
                 }
@@ -604,8 +607,8 @@ class TabAutomator {
                   '.breadcrumbs a[href*="/proceeding"], .breadcrumbs a[href*="/conhome/"], .document-header a[href*="/conhome/"]'
                 );
 
-                const hasExpandedIsbn = !!document.querySelector('.abstract-metadata-indent, .isbn-value, [class*="isbn"]') ||
-                                        /Electronic\s*ISBN|Print(?:\s*on\s*Demand)?\s*ISBN/i.test(document.body ? document.body.innerText : '');
+                const hasExpandedIsbn = !!document.querySelector('.abstract-metadata-indent, .isbn-value, [class*="isbn-value"]') ||
+                                        /Electronic\s*ISBN|Print(?:\s*on\s*Demand|\(PoD\))?\s*ISBN/i.test(document.body ? document.body.innerText : '');
 
                 // Jika mode Metadata Only (Cepat):
                 if (isMetaOnly && (hasExpandedIsbn || elapsed >= 2500)) {
