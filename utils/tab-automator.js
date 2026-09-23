@@ -278,7 +278,7 @@ class TabAutomator {
       // TAHAP 1: Jika di Scopus (scopus.com)
       // ========================================================
       if (currentUrl.includes('scopus.com')) {
-        onStatus('Halaman Scopus: Mencari tombol View at Publisher & Metadata...');
+        onStatus('Halaman Scopus: Memeriksa sidebar informasi & tombol View at Publisher...');
 
         const scopusResult = await this.executeInTab(tabId, (isMetaOnly) => {
           return new Promise((resolve) => {
@@ -287,21 +287,37 @@ class TabAutomator {
             let elapsed = 0;
 
             const poll = () => {
-              // 1b. Coba klik tombol "Detailed information" jika ada untuk memicu flyout Scopus
-              const detailBtn = Array.from(document.querySelectorAll('button, a')).find(btn => {
+              // 1. Klik tombol "Show all information", "Detailed information", "Show more" jika ada untuk membuka sidebar/flyout Scopus
+              const infoButtons = Array.from(document.querySelectorAll('button, a')).filter(btn => {
                 const text = (btn.innerText || btn.textContent || '').trim().toLowerCase();
-                return (text.includes('detailed information') || text.includes('detail information')) && btn.getAttribute('aria-expanded') !== 'true';
+                const matchesText = text.includes('show all information') ||
+                                    text.includes('detailed information') ||
+                                    text.includes('detail information') ||
+                                    text.includes('show more information') ||
+                                    text.includes('show information') ||
+                                    text.includes('show more');
+                return matchesText && btn.getAttribute('aria-expanded') !== 'true';
               });
-              if (detailBtn) {
-                try { detailBtn.click(); } catch (e) {}
-              }
 
-              // Jika mode metadata only, periksa apakah flyout/DOM Scopus sudah memiliki ISBN
+              infoButtons.forEach(btn => {
+                try {
+                  btn.click();
+                  btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                } catch (e) {}
+              });
+
+              // Cek apakah flyout / sidebar Scopus sudah terbuka dan memiliki data ISBN atau metadata
+              const outer = document.documentElement ? document.documentElement.outerHTML : '';
+              const hasIsbnInScopus = /97[89][- ]?[0-9]{1,5}[- ]?[0-9]+[- ]?[0-9]+[- ]?[0-9Xx]/.test(outer) ||
+                                      outer.includes('source-info-isbn') ||
+                                      outer.includes('document-info-isbn') ||
+                                      outer.includes('DetailedInformationFlyout') ||
+                                      outer.includes('Flyout_main');
+
+              // Jika mode metadata only (Cepat):
+              // Jika sidebar Scopus sudah menyediakan ISBN, selesaikan langsung tanpa harus buka web penerbit
               if (isMetaOnly) {
-                const outer = document.documentElement ? document.documentElement.outerHTML : '';
-                const hasIsbn = /97[89][- ]?[0-9]{1,5}[- ]?[0-9]+[- ]?[0-9]+[- ]?[0-9Xx]/.test(outer) ||
-                                outer.includes('DetailedInformation') || outer.includes('Flyout_main');
-                if (hasIsbn && elapsed >= 600) {
+                if (hasIsbnInScopus && elapsed >= 600) {
                   const titleEl = document.querySelector('h1, h2, .document-title');
                   resolve({
                     success: true,
@@ -313,7 +329,7 @@ class TabAutomator {
                 }
               }
 
-              // 1. Buka dropdown menu "Full text" jika ada dan belum terbuka
+              // 2. Buka dropdown menu "Full text" jika ada dan belum terbuka
               const toolbar = document.querySelector('[class*="DocumentToolbar"], .DocumentToolbar_wrapper__Cfual, .document-toolbar');
               const searchScope = toolbar || document;
 
@@ -327,8 +343,7 @@ class TabAutomator {
                 fullTextBtn.click();
               }
 
-              // 2. Cari link "View at Publisher"
-              // Penting: Abaikan "View PDF" karena kita ingin menuju ke halaman publisher utama
+              // 3. Cari link "View at Publisher"
               const allLinks = Array.from(document.querySelectorAll(
                 '[class*="DocumentToolbar"] a, [class*="Menu_menu"] a, [role="menu"] a, [class*="Stack_stack"] a, a'
               ));
@@ -341,17 +356,22 @@ class TabAutomator {
               });
 
               if (pubLink && pubLink.href && !pubLink.href.startsWith('javascript:')) {
-                const titleEl = document.querySelector('h1, h2, .document-title');
-                resolve({
-                  success: true,
-                  publisherUrl: pubLink.href,
-                  paperTitle: titleEl ? titleEl.textContent.trim() : '',
-                  html: document.documentElement ? document.documentElement.outerHTML : ''
-                });
-                return;
+                // Di mode cepat, beri kesempatan 1.5 detik jika tombol detail baru diklik agar ISBN flyout sempat terbaca
+                if (isMetaOnly && elapsed < 1500 && !hasIsbnInScopus) {
+                  // Lanjut polling berikutnya
+                } else {
+                  const titleEl = document.querySelector('h1, h2, .document-title');
+                  resolve({
+                    success: true,
+                    publisherUrl: pubLink.href,
+                    paperTitle: titleEl ? titleEl.textContent.trim() : '',
+                    html: document.documentElement ? document.documentElement.outerHTML : ''
+                  });
+                  return;
+                }
               }
 
-              // 3. Cek link DOI atau publisher langsung di dalam toolbar/menu (bukan di references dokumen)
+              // 4. Cek link DOI atau publisher langsung di dalam toolbar/menu
               const toolbarDoiLink = Array.from(searchScope.querySelectorAll('a')).find(a => {
                 if (!a.href) return false;
                 const text = (a.innerText || a.textContent || '').toLowerCase();
@@ -370,19 +390,23 @@ class TabAutomator {
               });
 
               if (toolbarDoiLink) {
-                const titleEl = document.querySelector('h1, h2, .document-title');
-                resolve({
-                  success: true,
-                  publisherUrl: toolbarDoiLink.href,
-                  paperTitle: titleEl ? titleEl.textContent.trim() : '',
-                  html: document.documentElement ? document.documentElement.outerHTML : ''
-                });
-                return;
+                if (isMetaOnly && elapsed < 1500 && !hasIsbnInScopus) {
+                  // Tunggu sebentar untuk Scopus sidebar
+                } else {
+                  const titleEl = document.querySelector('h1, h2, .document-title');
+                  resolve({
+                    success: true,
+                    publisherUrl: toolbarDoiLink.href,
+                    paperTitle: titleEl ? titleEl.textContent.trim() : '',
+                    html: document.documentElement ? document.documentElement.outerHTML : ''
+                  });
+                  return;
+                }
               }
 
               elapsed += INTERVAL;
               if (elapsed >= MAX_WAIT) {
-                const bodyText = document.body.innerText || '';
+                const bodyText = document.body ? document.body.innerText : '';
                 const match = bodyText.match(/10\.\d{4,9}\/[-._;()/:A-Za-z0-9]+/);
                 if (match) {
                   resolve({
@@ -395,8 +419,9 @@ class TabAutomator {
                 }
 
                 resolve({
-                  success: false,
-                  error: 'Tidak dapat menemukan link View at Publisher di Scopus ini.',
+                  success: hasIsbnInScopus,
+                  fastMetaFound: hasIsbnInScopus,
+                  error: hasIsbnInScopus ? null : 'Tidak dapat menemukan link View at Publisher atau data ISBN di Scopus ini.',
                   html: document.documentElement ? document.documentElement.outerHTML : ''
                 });
                 return;
@@ -415,7 +440,7 @@ class TabAutomator {
             const parsedMeta = extractScopusMetadata(scopusResult.html);
             scopusMeta = { ...scopusMeta, ...parsedMeta };
             if (scopusMeta.isbnElectronic || scopusMeta.isbnPrint) {
-              onStatus(`Scopus: Ditemukan ISBN Elec: ${scopusMeta.isbnElectronic || '-'}, Print: ${scopusMeta.isbnPrint || '-'}, Lokasi: ${scopusMeta.city || '-'}`);
+              onStatus(`Scopus Sidebar: Ditemukan ISBN Elec: ${scopusMeta.isbnElectronic || '-'}, Print: ${scopusMeta.isbnPrint || '-'}, Lokasi: ${scopusMeta.city || '-'}`);
             }
           } catch (scopusErr) {
             console.warn('[Automator] Gagal ekstrak metadata Scopus:', scopusErr);
@@ -426,7 +451,7 @@ class TabAutomator {
         // Jika Scopus sudah menyediakan ISBN, ATAU tidak ada link publisher
         if (metadataOnly) {
           if (scopusMeta.isbnElectronic || scopusMeta.isbnPrint || !scopusResult || !scopusResult.publisherUrl) {
-            onStatus(`Scopus: Selesai mengambil metadata tanpa cover (ISBN: ${scopusMeta.isbnElectronic || scopusMeta.isbnPrint || '-'}, Lokasi: ${scopusMeta.city || '-'}). Selesai!`);
+            onStatus(`Scopus: Selesai mengambil metadata dari Scopus (ISBN: ${scopusMeta.isbnElectronic || scopusMeta.isbnPrint || '-'}, Lokasi: ${scopusMeta.city || '-'}).`);
             return {
               publisherType: 'Scopus',
               title: (scopusResult && scopusResult.paperTitle) || scopusMeta.sourceTitle || paperOrChapterTitle || '',
@@ -447,7 +472,7 @@ class TabAutomator {
           }
         }
 
-        if (!scopusResult || !scopusResult.success) {
+        if (!scopusResult || (!scopusResult.success && !scopusResult.publisherUrl)) {
           throw new Error(scopusResult ? scopusResult.error : 'Gagal mengekstrak link publisher dari Scopus.');
         }
 
@@ -474,7 +499,7 @@ class TabAutomator {
         if (currentUrl.includes('/document/')) {
           onStatus('Halaman Paper IEEE: Mencari link Conference Proceeding & ISBN...');
 
-          const ieeeDocResult = await this.executeInTab(tabId, () => {
+          const ieeeDocResult = await this.executeInTab(tabId, (isMetaOnly) => {
             return new Promise((resolve) => {
               const MAX_WAIT = 10000;
               const INTERVAL = 300;
@@ -483,30 +508,59 @@ class TabAutomator {
               const poll = () => {
                 // Buka tombol accordion ISBN jika tertutup
                 const allButtons = Array.from(document.querySelectorAll('button'));
-                const isbnBtn = allButtons.find(b => (b.innerText || b.textContent || '').includes('ISBN Information'));
+                const isbnBtn = allButtons.find(b => {
+                  const text = (b.innerText || b.textContent || '').trim();
+                  return /ISBN\s*Information/i.test(text);
+                });
                 if (isbnBtn && isbnBtn.getAttribute('aria-expanded') !== 'true') {
-                  try { isbnBtn.click(); } catch (e) {}
+                  try {
+                    isbnBtn.click();
+                    isbnBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                  } catch (e) {}
                 }
 
                 const proceedingLink = document.querySelector(
                   '.breadcrumbs a[href*="/proceeding"], .breadcrumbs a[href*="/conhome/"], .document-header a[href*="/conhome/"]'
                 );
-                if (proceedingLink && proceedingLink.href) {
+
+                const hasExpandedIsbn = !!document.querySelector('.abstract-metadata-indent, .isbn-value, [class*="isbn"]') ||
+                                        /Electronic\s*ISBN|Print(?:\s*on\s*Demand)?\s*ISBN/i.test(document.body ? document.body.innerText : '');
+
+                // Jika mode Metadata Only (Cepat):
+                if (isMetaOnly && (hasExpandedIsbn || elapsed >= 2500)) {
                   const titleEl = document.querySelector('h1.document-title, .document-title-fix h1');
                   resolve({
                     success: true,
-                    proceedingUrl: proceedingLink.href,
+                    proceedingUrl: proceedingLink ? proceedingLink.href : '',
                     paperTitle: titleEl ? titleEl.textContent.trim() : '',
                     html: document.documentElement ? document.documentElement.outerHTML : ''
                   });
                   return;
                 }
 
+                if (proceedingLink && proceedingLink.href) {
+                  if (isbnBtn && !hasExpandedIsbn && elapsed < 1500) {
+                    // tunggu sejenak agar accordion DOM sempat ter-render
+                  } else {
+                    const titleEl = document.querySelector('h1.document-title, .document-title-fix h1');
+                    resolve({
+                      success: true,
+                      proceedingUrl: proceedingLink.href,
+                      paperTitle: titleEl ? titleEl.textContent.trim() : '',
+                      html: document.documentElement ? document.documentElement.outerHTML : ''
+                    });
+                    return;
+                  }
+                }
+
                 elapsed += INTERVAL;
                 if (elapsed >= MAX_WAIT) {
+                  const titleEl = document.querySelector('h1.document-title, .document-title-fix h1');
                   resolve({
-                    success: false,
-                    error: 'Tidak dapat menemukan link Conference Proceeding di halaman IEEE ini.',
+                    success: !!proceedingLink,
+                    proceedingUrl: proceedingLink ? proceedingLink.href : '',
+                    paperTitle: titleEl ? titleEl.textContent.trim() : '',
+                    error: proceedingLink ? null : 'Tidak dapat menemukan link Conference Proceeding di halaman IEEE ini.',
                     html: document.documentElement ? document.documentElement.outerHTML : ''
                   });
                   return;
@@ -517,7 +571,7 @@ class TabAutomator {
 
               poll();
             });
-          });
+          }, [metadataOnly]);
 
           // Ekstraksi Metadata IEEE Document (Electronic ISBN, Print on Demand ISBN, City, DOI)
           if (ieeeDocResult && ieeeDocResult.html && typeof extractIeeeDocumentMetadata === 'function') {
