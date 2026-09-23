@@ -583,35 +583,46 @@ class TabAutomator {
           const ieeeDocResult = await this.executeInTab(tabId, (isMetaOnly) => {
             return new Promise((resolve) => {
               const MAX_WAIT = 10000;
-              const INTERVAL = 300;
+              const INTERVAL = 250;
               let elapsed = 0;
 
               const poll = () => {
-                // Buka tombol accordion ISBN jika tertutup
+                // 1. Cari tombol accordion ISBN (contoh: <button>ISBN Information: </button>)
                 const allButtons = Array.from(document.querySelectorAll('button, [role="button"], a'));
                 const isbnBtn = allButtons.find(b => {
                   const text = (b.innerText || b.textContent || '').trim();
                   return /ISBN\s*Information/i.test(text);
                 });
-                if (isbnBtn && isbnBtn.getAttribute('aria-expanded') !== 'true') {
-                  try {
-                    isbnBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
-                    isbnBtn.click();
-                    isbnBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
-                    isbnBtn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
-                    isbnBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-                  } catch (e) {}
+
+                // Klik tombol sekali saja agar tidak menutup kembali (toggle)
+                if (isbnBtn) {
+                  const isExpanded = isbnBtn.getAttribute('aria-expanded') === 'true';
+                  if (!isExpanded && !isbnBtn._hasAutoClicked) {
+                    isbnBtn._hasAutoClicked = true;
+                    try {
+                      isbnBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
+                      isbnBtn.click();
+                      isbnBtn.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+                      isbnBtn.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, cancelable: true }));
+                      isbnBtn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+                    } catch (e) {}
+                  }
                 }
+
+                // 2. Cek apakah isi accordion ISBN sudah terbuka di DOM
+                const expandedIndent = document.querySelector('.abstract-metadata-indent, [class*="abstract-metadata-indent"]');
+                const hasExpandedIsbn = !!expandedIndent ||
+                                        /Electronic\s*ISBN|Print(?:\s*on\s*Demand|\(PoD\))?\s*ISBN/i.test(document.body ? document.body.innerText : '');
 
                 const proceedingLink = document.querySelector(
                   '.breadcrumbs a[href*="/proceeding"], .breadcrumbs a[href*="/conhome/"], .document-header a[href*="/conhome/"]'
                 );
 
-                const hasExpandedIsbn = !!document.querySelector('.abstract-metadata-indent, .isbn-value, [class*="isbn-value"]') ||
-                                        /Electronic\s*ISBN|Print(?:\s*on\s*Demand|\(PoD\))?\s*ISBN/i.test(document.body ? document.body.innerText : '');
+                // Pastikan tidak me-resolve terburu-buru sebelum Angular sempat merender & membuka accordion ISBN
+                const isReadyToResolve = hasExpandedIsbn || (elapsed >= 3000);
 
                 // Jika mode Metadata Only (Cepat):
-                if (isMetaOnly && (hasExpandedIsbn || elapsed >= 2500)) {
+                if (isMetaOnly && isReadyToResolve) {
                   const titleEl = document.querySelector('h1.document-title, .document-title-fix h1');
                   resolve({
                     success: true,
@@ -622,19 +633,16 @@ class TabAutomator {
                   return;
                 }
 
-                if (proceedingLink && proceedingLink.href) {
-                  if (isbnBtn && !hasExpandedIsbn && elapsed < 1500) {
-                    // tunggu sejenak agar accordion DOM sempat ter-render
-                  } else {
-                    const titleEl = document.querySelector('h1.document-title, .document-title-fix h1');
-                    resolve({
-                      success: true,
-                      proceedingUrl: proceedingLink.href,
-                      paperTitle: titleEl ? titleEl.textContent.trim() : '',
-                      html: document.documentElement ? document.documentElement.outerHTML : ''
-                    });
-                    return;
-                  }
+                // Jika mode Cover (Normal):
+                if (proceedingLink && proceedingLink.href && isReadyToResolve) {
+                  const titleEl = document.querySelector('h1.document-title, .document-title-fix h1');
+                  resolve({
+                    success: true,
+                    proceedingUrl: proceedingLink.href,
+                    paperTitle: titleEl ? titleEl.textContent.trim() : '',
+                    html: document.documentElement ? document.documentElement.outerHTML : ''
+                  });
+                  return;
                 }
 
                 elapsed += INTERVAL;
