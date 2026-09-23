@@ -523,18 +523,20 @@ class TabAutomator {
         }
 
         // JIKA MODE METADATA ONLY (Cepat / Tanpa Cover):
-        // Jika Scopus sudah menyediakan data 100% LENGKAP (kedua ISBN Elec & Print ada DAN City ada),
+        // Jika Scopus sudah menyediakan data lengkap (2 ISBN ATAU 1 ISBN + Lokasi),
         // ATAU jika memang TIDAK ADA link publisher untuk dituju:
-        const hasCompleteScopusMeta = (scopusMeta.isbnElectronic && scopusMeta.isbnPrint && scopusMeta.city);
+        const hasScopusIsbn = Boolean(scopusMeta.isbnElectronic || scopusMeta.isbnPrint);
+        const hasBothIsbns = Boolean(scopusMeta.isbnElectronic && scopusMeta.isbnPrint);
+        const hasCompleteScopusMeta = hasBothIsbns || (hasScopusIsbn && Boolean(scopusMeta.city));
         const hasPublisherLink = Boolean(scopusResult && scopusResult.publisherUrl);
 
         if (metadataOnly) {
           if (hasCompleteScopusMeta || !hasPublisherLink) {
             onStatus(`Scopus: Selesai mengambil metadata dari Scopus (ISBN Elec: ${scopusMeta.isbnElectronic || '-'}, Print: ${scopusMeta.isbnPrint || '-'}, Lokasi: ${scopusMeta.city || '-'}).`);
             return {
-              publisherType: 'Scopus',
-              title: (scopusResult && scopusResult.paperTitle) || scopusMeta.sourceTitle || paperOrChapterTitle || '',
-              chapterTitle: (scopusResult && scopusResult.paperTitle) || '',
+              publisherType: scopusMeta.publisher || 'Scopus',
+              title: scopusMeta.sourceTitle || (scopusResult && scopusResult.paperTitle) || paperOrChapterTitle || 'Scopus Publication',
+              chapterTitle: (scopusResult && scopusResult.paperTitle) || paperOrChapterTitle || '',
               publisher: scopusMeta.publisher || 'Scopus',
               city: scopusMeta.city || '',
               isbnElectronic: scopusMeta.isbnElectronic || '',
@@ -549,11 +551,31 @@ class TabAutomator {
               coverFilename: 'Tanpa Cover (Mode Cepat)'
             };
           } else {
-            onStatus(`Scopus: Data di Scopus hanya 1 ISBN. Mengarahkan ke penerbit (${scopusResult.publisherUrl}) untuk melengkapi data...`);
+            onStatus(`Scopus: Metadata tersimpan. Mengarahkan ke penerbit (${scopusResult.publisherUrl}) untuk mengecek kelengkapan...`);
           }
         }
 
         if (!scopusResult || (!scopusResult.success && !scopusResult.publisherUrl)) {
+          if (hasScopusIsbn || scopusMeta.doi || scopusMeta.sourceTitle) {
+            onStatus(`Scopus: Link publisher tidak ditemukan, menggunakan metadata Scopus.`);
+            return {
+              publisherType: scopusMeta.publisher || 'Scopus',
+              title: scopusMeta.sourceTitle || (scopusResult && scopusResult.paperTitle) || paperOrChapterTitle || 'Scopus Publication',
+              chapterTitle: (scopusResult && scopusResult.paperTitle) || paperOrChapterTitle || '',
+              publisher: scopusMeta.publisher || 'Scopus',
+              city: scopusMeta.city || '',
+              isbnElectronic: scopusMeta.isbnElectronic || '',
+              isbnPrint: scopusMeta.isbnPrint || '',
+              isbn: scopusMeta.isbnElectronic || scopusMeta.isbnPrint || '',
+              doi: scopusMeta.doi || '',
+              scopusUrl: initialUrl,
+              sourceUrl: initialUrl,
+              isPdfCover: false,
+              coverUrl: '',
+              coverPdfUrl: '',
+              coverFilename: metadataOnly ? 'Tanpa Cover (Mode Cepat)' : 'Cover Tidak Tersedia (Link Penerbit Tidak Ditemukan)'
+            };
+          }
           throw new Error(scopusResult ? scopusResult.error : 'Gagal mengekstrak link publisher dari Scopus.');
         }
 
@@ -561,15 +583,40 @@ class TabAutomator {
         const publisherUrl = scopusResult.publisherUrl;
         onStatus(`Ditemukan Publisher: ${publisherUrl}. Mengarahkan...`);
 
-        await this.updateTabUrl(tabId, publisherUrl, activeTab);
-        await this.waitForTabLoad(tabId, timeoutMs);
-        await this.sleep(metadataOnly ? 300 : 1200);
+        try {
+          await this.updateTabUrl(tabId, publisherUrl, activeTab);
+          await this.waitForTabLoad(tabId, timeoutMs);
+          await this.sleep(metadataOnly ? 300 : 1200);
 
-        // Cek jika muncul tantangan verifikasi robot (Cloudflare/CAPTCHA) saat masuk ke publisher
-        await this.waitForRobotVerification(tabId, onStatus);
+          // Cek jika muncul tantangan verifikasi robot (Cloudflare/CAPTCHA) saat masuk ke publisher
+          await this.waitForRobotVerification(tabId, onStatus);
 
-        currentTab = await this.getTab(tabId);
-        currentUrl = (currentTab && currentTab.url) ? currentTab.url : publisherUrl;
+          currentTab = await this.getTab(tabId);
+          currentUrl = (currentTab && currentTab.url) ? currentTab.url : publisherUrl;
+        } catch (navErr) {
+          if (hasScopusIsbn || scopusMeta.doi || scopusMeta.sourceTitle) {
+            console.warn('[Automator] Gagal membuka URL penerbit, menggunakan data Scopus:', navErr.message);
+            onStatus(`Penerbit tidak dapat diakses (${navErr.message}). Tetap menggunakan data dari Scopus.`);
+            return {
+              publisherType: scopusMeta.publisher || 'Scopus',
+              title: scopusMeta.sourceTitle || paperOrChapterTitle || 'Scopus Publication',
+              chapterTitle: paperOrChapterTitle || '',
+              publisher: scopusMeta.publisher || 'Scopus',
+              city: scopusMeta.city || '',
+              isbnElectronic: scopusMeta.isbnElectronic || '',
+              isbnPrint: scopusMeta.isbnPrint || '',
+              isbn: scopusMeta.isbnElectronic || scopusMeta.isbnPrint || '',
+              doi: scopusMeta.doi || '',
+              scopusUrl: initialUrl,
+              sourceUrl: publisherUrl || initialUrl,
+              isPdfCover: false,
+              coverUrl: '',
+              coverPdfUrl: '',
+              coverFilename: metadataOnly ? 'Tanpa Cover (Mode Cepat)' : 'Cover Tidak Tersedia (Gagal Akses Penerbit)'
+            };
+          }
+          throw navErr;
+        }
       }
 
       // ========================================================
@@ -2291,6 +2338,29 @@ class TabAutomator {
 
       return bookData;
 
+    } catch (err) {
+      if (scopusMeta && (scopusMeta.isbnElectronic || scopusMeta.isbnPrint || scopusMeta.doi || scopusMeta.sourceTitle || paperOrChapterTitle)) {
+        console.warn('[Automator] Error saat memproses publisher, fallback ke data Scopus:', err);
+        onStatus(`Publisher terkendala (${err.message}). Tetap menggunakan metadata dari Scopus.`);
+        return {
+          publisherType: scopusMeta.publisher || 'Scopus',
+          title: scopusMeta.sourceTitle || paperOrChapterTitle || 'Scopus Publication',
+          chapterTitle: paperOrChapterTitle || '',
+          publisher: scopusMeta.publisher || 'Scopus',
+          city: scopusMeta.city || '',
+          isbnElectronic: scopusMeta.isbnElectronic || '',
+          isbnPrint: scopusMeta.isbnPrint || '',
+          isbn: scopusMeta.isbnElectronic || scopusMeta.isbnPrint || '',
+          doi: scopusMeta.doi || '',
+          scopusUrl: scopusUrl || initialUrl,
+          sourceUrl: currentUrl || initialUrl,
+          isPdfCover: false,
+          coverUrl: '',
+          coverPdfUrl: '',
+          coverFilename: metadataOnly ? 'Tanpa Cover (Mode Cepat)' : 'Cover Tidak Tersedia (Gagal Akses Penerbit)'
+        };
+      }
+      throw err;
     } finally {
       const tid = this.currentTabId || (tab ? tab.id : null);
       this.currentTabId = null;
