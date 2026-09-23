@@ -96,9 +96,9 @@ function mergeMultipleCsvFiles(csvFilesArray, { deduplicate = true, sortById = t
 
   // Standardisasi nama-nama kolom utama
   const standardHeadersOrder = [
-    'No', 'ID', 'Judul Buku / Proceeding', 'Judul Artikel / Chapter',
-    'Subtitle', 'Nama File Cover', 'ISBN / ISSN', 'DOI', 'Tahun',
-    'Editor', 'Series', 'Publisher', 'Link Scopus', 'Link Publisher'
+    'No', 'ID', 'Judul Buku / Proceeding', 'Judul Publikasi', 'Judul Artikel / Chapter', 'Judul Chapter / Paper',
+    'Subtitle', 'Nama File Cover', 'Tahun', 'Publisher', 'Kota / Lokasi Konferensi', 'ISBN Electronic', 'ISBN Print', 'ISBN / Paper ID', 'ISBN / ISSN', 'DOI',
+    'Editor', 'Editor / Penulis', 'Series', 'Series / Volume', 'URL Cover Asli', 'Link Scopus', 'Link Publisher', 'URL Halaman Publisher', 'Status Scraping', 'Status'
   ];
 
   for (const item of csvFilesArray) {
@@ -144,8 +144,8 @@ function mergeMultipleCsvFiles(csvFilesArray, { deduplicate = true, sortById = t
 
   // Helper untuk menilai kelengkapan & status sukses baris data
   const isFailedRow = (r) => {
-    const st = String(r['Status'] || r['status'] || '').toLowerCase();
-    const title = r['Judul Buku / Proceeding'] || r['Judul Artikel / Chapter'] || r['title'] || '';
+    const st = String(r['Status'] || r['status'] || r['Status Scraping'] || '').toLowerCase();
+    const title = r['Judul Buku / Proceeding'] || r['Judul Publikasi'] || r['Judul Artikel / Chapter'] || r['Judul Chapter / Paper'] || r['title'] || '';
     return st.includes('gagal') || st.includes('failed') || title === 'Gagal Diambil' || !title;
   };
 
@@ -153,11 +153,14 @@ function mergeMultipleCsvFiles(csvFilesArray, { deduplicate = true, sortById = t
     let score = 0;
     if (!isFailedRow(r)) score += 1000;
     if (r['Nama File Cover'] && !r['Nama File Cover'].includes('(failed)')) score += 100;
-    if (r['ISBN / ISSN'] || r['isbn']) score += 20;
+    if (r['ISBN Electronic'] || r['isbnElectronic']) score += 20;
+    if (r['ISBN Print'] || r['isbnPrint']) score += 20;
+    if (r['Kota / Lokasi Konferensi'] || r['city']) score += 15;
+    if (r['ISBN / Paper ID'] || r['ISBN / ISSN'] || r['isbn']) score += 15;
     if (r['DOI'] || r['doi']) score += 20;
     if (r['Tahun'] || r['year']) score += 10;
     if (r['Link Scopus'] || r['scopusUrl']) score += 10;
-    if (r['Judul Buku / Proceeding'] || r['title']) score += 10;
+    if (r['Judul Buku / Proceeding'] || r['Judul Publikasi'] || r['title']) score += 10;
     return score;
   };
 

@@ -230,6 +230,22 @@ class TabAutomator {
     let tab = null;
     let paperOrChapterTitle = '';
     let scopusUrl = initialUrl;
+    let scopusMeta = {
+      rawIsbn: '',
+      isbnElectronic: '',
+      isbnPrint: '',
+      city: '',
+      publisher: '',
+      doi: '',
+      sourceTitle: ''
+    };
+    let ieeeDocMeta = {
+      isbnElectronic: '',
+      isbnPrint: '',
+      city: '',
+      doi: '',
+      publisher: ''
+    };
 
     try {
       onStatus(`Membuka tab: ${initialUrl}`);
@@ -260,7 +276,7 @@ class TabAutomator {
       // TAHAP 1: Jika di Scopus (scopus.com)
       // ========================================================
       if (currentUrl.includes('scopus.com')) {
-        onStatus('Halaman Scopus: Mencari tombol View at Publisher...');
+        onStatus('Halaman Scopus: Mencari tombol View at Publisher & Metadata...');
 
         const scopusResult = await this.executeInTab(tabId, () => {
           return new Promise((resolve) => {
@@ -283,6 +299,15 @@ class TabAutomator {
                 fullTextBtn.click();
               }
 
+              // 1b. Coba klik tombol "Detailed information" jika ada untuk memicu flyout Scopus
+              const detailBtn = Array.from(document.querySelectorAll('button, a')).find(btn => {
+                const text = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+                return (text.includes('detailed information') || text.includes('detail information')) && btn.getAttribute('aria-expanded') !== 'true';
+              });
+              if (detailBtn) {
+                try { detailBtn.click(); } catch (e) {}
+              }
+
               // 2. Cari link "View at Publisher"
               // Penting: Abaikan "View PDF" karena kita ingin menuju ke halaman publisher utama
               const allLinks = Array.from(document.querySelectorAll(
@@ -301,7 +326,8 @@ class TabAutomator {
                 resolve({
                   success: true,
                   publisherUrl: pubLink.href,
-                  paperTitle: titleEl ? titleEl.textContent.trim() : ''
+                  paperTitle: titleEl ? titleEl.textContent.trim() : '',
+                  html: document.documentElement ? document.documentElement.outerHTML : ''
                 });
                 return;
               }
@@ -329,7 +355,8 @@ class TabAutomator {
                 resolve({
                   success: true,
                   publisherUrl: toolbarDoiLink.href,
-                  paperTitle: titleEl ? titleEl.textContent.trim() : ''
+                  paperTitle: titleEl ? titleEl.textContent.trim() : '',
+                  html: document.documentElement ? document.documentElement.outerHTML : ''
                 });
                 return;
               }
@@ -342,14 +369,16 @@ class TabAutomator {
                   resolve({
                     success: true,
                     publisherUrl: 'https://doi.org/' + match[0],
-                    paperTitle: document.querySelector('h1, h2')?.textContent?.trim() || ''
+                    paperTitle: document.querySelector('h1, h2')?.textContent?.trim() || '',
+                    html: document.documentElement ? document.documentElement.outerHTML : ''
                   });
                   return;
                 }
 
                 resolve({
                   success: false,
-                  error: 'Tidak dapat menemukan link View at Publisher di Scopus ini.'
+                  error: 'Tidak dapat menemukan link View at Publisher di Scopus ini.',
+                  html: document.documentElement ? document.documentElement.outerHTML : ''
                 });
                 return;
               }
@@ -360,6 +389,19 @@ class TabAutomator {
             poll();
           });
         });
+
+        // Ekstraksi Scopus Metadata (ISBN Electronic, ISBN Print, City, Publisher)
+        if (scopusResult && scopusResult.html && typeof extractScopusMetadata === 'function') {
+          try {
+            const parsedMeta = extractScopusMetadata(scopusResult.html);
+            scopusMeta = { ...scopusMeta, ...parsedMeta };
+            if (scopusMeta.isbnElectronic || scopusMeta.isbnPrint) {
+              onStatus(`Scopus: Ditemukan ISBN Elec: ${scopusMeta.isbnElectronic || '-'}, Print: ${scopusMeta.isbnPrint || '-'}, Lokasi: ${scopusMeta.city || '-'}`);
+            }
+          } catch (scopusErr) {
+            console.warn('[Automator] Gagal ekstrak metadata Scopus:', scopusErr);
+          }
+        }
 
         if (!scopusResult || !scopusResult.success) {
           throw new Error(scopusResult ? scopusResult.error : 'Gagal mengekstrak link publisher dari Scopus.');
@@ -386,7 +428,7 @@ class TabAutomator {
       if (currentUrl.includes('ieeexplore.ieee.org')) {
         // Jika sedang di halaman Document / Paper IEEE (/document/...)
         if (currentUrl.includes('/document/')) {
-          onStatus('Halaman Paper IEEE: Mencari link Conference Proceeding...');
+          onStatus('Halaman Paper IEEE: Mencari link Conference Proceeding & ISBN...');
 
           const ieeeDocResult = await this.executeInTab(tabId, () => {
             return new Promise((resolve) => {
@@ -395,6 +437,13 @@ class TabAutomator {
               let elapsed = 0;
 
               const poll = () => {
+                // Buka tombol accordion ISBN jika tertutup
+                const allButtons = Array.from(document.querySelectorAll('button'));
+                const isbnBtn = allButtons.find(b => (b.innerText || b.textContent || '').includes('ISBN Information'));
+                if (isbnBtn && isbnBtn.getAttribute('aria-expanded') !== 'true') {
+                  try { isbnBtn.click(); } catch (e) {}
+                }
+
                 const proceedingLink = document.querySelector(
                   '.breadcrumbs a[href*="/proceeding"], .breadcrumbs a[href*="/conhome/"], .document-header a[href*="/conhome/"]'
                 );
@@ -403,7 +452,8 @@ class TabAutomator {
                   resolve({
                     success: true,
                     proceedingUrl: proceedingLink.href,
-                    paperTitle: titleEl ? titleEl.textContent.trim() : ''
+                    paperTitle: titleEl ? titleEl.textContent.trim() : '',
+                    html: document.documentElement ? document.documentElement.outerHTML : ''
                   });
                   return;
                 }
@@ -412,7 +462,8 @@ class TabAutomator {
                 if (elapsed >= MAX_WAIT) {
                   resolve({
                     success: false,
-                    error: 'Tidak dapat menemukan link Conference Proceeding di halaman IEEE ini.'
+                    error: 'Tidak dapat menemukan link Conference Proceeding di halaman IEEE ini.',
+                    html: document.documentElement ? document.documentElement.outerHTML : ''
                   });
                   return;
                 }
@@ -423,6 +474,19 @@ class TabAutomator {
               poll();
             });
           });
+
+          // Ekstraksi Metadata IEEE Document (Electronic ISBN, Print on Demand ISBN, City, DOI)
+          if (ieeeDocResult && ieeeDocResult.html && typeof extractIeeeDocumentMetadata === 'function') {
+            try {
+              const parsedIeee = extractIeeeDocumentMetadata(ieeeDocResult.html);
+              ieeeDocMeta = { ...ieeeDocMeta, ...parsedIeee };
+              if (ieeeDocMeta.isbnElectronic || ieeeDocMeta.isbnPrint) {
+                onStatus(`IEEE: Ditemukan ISBN Elec: ${ieeeDocMeta.isbnElectronic || '-'}, Print: ${ieeeDocMeta.isbnPrint || '-'}, Lokasi: ${ieeeDocMeta.city || '-'}`);
+              }
+            } catch (ieeeErr) {
+              console.warn('[Automator] Gagal ekstrak metadata IEEE document:', ieeeErr);
+            }
+          }
 
           if (!ieeeDocResult || !ieeeDocResult.success) {
             throw new Error(ieeeDocResult ? ieeeDocResult.error : 'Gagal menemukan link Proceeding IEEE.');
@@ -795,8 +859,11 @@ class TabAutomator {
           coverUrl: ieeeProceedingData.coverDirectPdfUrl || ieeeProceedingData.coverPdfUrl,
           coverPdfUrl: ieeeProceedingData.coverDirectPdfUrl || ieeeProceedingData.coverPdfUrl,
           isPdfCover: true,
-          isbn: ieeeProceedingData.coverArnumber ? `IEEE-${ieeeProceedingData.coverArnumber}` : '',
-          doi: '',
+          isbnElectronic: ieeeDocMeta.isbnElectronic || scopusMeta.isbnElectronic || '',
+          isbnPrint: ieeeDocMeta.isbnPrint || scopusMeta.isbnPrint || '',
+          city: ieeeDocMeta.city || scopusMeta.city || '',
+          isbn: ieeeDocMeta.isbnElectronic || ieeeDocMeta.isbnPrint || scopusMeta.isbnElectronic || scopusMeta.isbnPrint || (ieeeProceedingData.coverArnumber ? `IEEE-${ieeeProceedingData.coverArnumber}` : ''),
+          doi: ieeeDocMeta.doi || scopusMeta.doi || '',
           year: ieeeProceedingData.year,
           editors: 'IEEE',
           series: 'IEEE Conference Proceedings',
@@ -964,8 +1031,11 @@ class TabAutomator {
               subtitle: sdChapterData.series || '',
               coverUrl: sdChapterData.coverUrl,
               coverFilename: '',
-              isbn: '',
-              doi: '',
+              isbnElectronic: scopusMeta.isbnElectronic || '',
+              isbnPrint: scopusMeta.isbnPrint || '',
+              city: scopusMeta.city || '',
+              isbn: scopusMeta.isbnElectronic || scopusMeta.isbnPrint || '',
+              doi: scopusMeta.doi || '',
               year: sdChapterData.year || '',
               editors: '',
               series: sdChapterData.series || '',
@@ -1071,6 +1141,7 @@ class TabAutomator {
 
         onStatus(`Ditemukan Buku Elsevier: ${sdBookData.title}. Menyiapkan unduhan...`);
 
+        const sdIsbnClean = sdBookData.isbn ? (typeof sanitizeIsbn === 'function' ? sanitizeIsbn(sdBookData.isbn) : sdBookData.isbn) : '';
         return {
           publisherType: 'Elsevier',
           title: sdBookData.title,
@@ -1078,8 +1149,11 @@ class TabAutomator {
           subtitle: sdBookData.subtitle,
           coverUrl: sdBookData.coverUrl || (sdChapterData ? sdChapterData.coverUrl : ''),
           coverFilename: '',
-          isbn: sdBookData.isbn ? `ISBN-${sdBookData.isbn}` : '',
-          doi: '',
+          isbnElectronic: scopusMeta.isbnElectronic || sdIsbnClean || '',
+          isbnPrint: scopusMeta.isbnPrint || '',
+          city: scopusMeta.city || '',
+          isbn: (sdIsbnClean ? `ISBN-${sdIsbnClean}` : '') || scopusMeta.isbnElectronic || scopusMeta.isbnPrint || '',
+          doi: scopusMeta.doi || '',
           year: sdBookData.year || (sdChapterData ? sdChapterData.year : ''),
           editors: sdBookData.editors,
           series: sdBookData.series || (sdChapterData ? sdChapterData.series : ''),
@@ -1377,6 +1451,9 @@ class TabAutomator {
         onStatus(`Ditemukan Publikasi ACM: ${acmProcData.title}. Menyiapkan unduhan...`);
 
         const isPdfCover = !acmProcData.coverUrl && !!acmProcData.coverPdfUrl;
+        const acmIsbnClean = (acmProcData.isbn && typeof isValidIsbn === 'function' && isValidIsbn(acmProcData.isbn))
+          ? (typeof sanitizeIsbn === 'function' ? sanitizeIsbn(acmProcData.isbn) : acmProcData.isbn)
+          : '';
 
         return {
           publisherType: 'ACM',
@@ -1386,8 +1463,11 @@ class TabAutomator {
           coverUrl: acmProcData.coverUrl || acmProcData.coverPdfUrl,
           coverPdfUrl: acmProcData.coverPdfUrl,
           coverFilename: '',
-          isbn: acmProcData.isbn,
-          doi: acmProcData.doi,
+          isbnElectronic: scopusMeta.isbnElectronic || acmIsbnClean || '',
+          isbnPrint: scopusMeta.isbnPrint || '',
+          city: scopusMeta.city || '',
+          isbn: (acmIsbnClean ? (acmIsbnClean.startsWith('ISBN') ? acmIsbnClean : `ISBN-${acmIsbnClean}`) : '') || scopusMeta.isbnElectronic || scopusMeta.isbnPrint || '',
+          doi: acmProcData.doi || scopusMeta.doi || '',
           year: acmProcData.year,
           editors: acmProcData.editors || 'ACM',
           series: acmProcData.subtitle || 'ACM Publications',
@@ -1491,8 +1571,11 @@ class TabAutomator {
           coverUrl: spieData.coverImageUrl || spieData.coverPdfUrl,
           coverPdfUrl: spieData.coverPdfUrl,
           isPdfCover: isPdf,
-          isbn: spieData.coverArnumber ? `SPIE-${spieData.coverArnumber}` : '',
-          doi: '',
+          isbnElectronic: scopusMeta.isbnElectronic || '',
+          isbnPrint: scopusMeta.isbnPrint || '',
+          city: scopusMeta.city || '',
+          isbn: scopusMeta.isbnElectronic || scopusMeta.isbnPrint || (spieData.coverArnumber ? `SPIE-${spieData.coverArnumber}` : ''),
+          doi: scopusMeta.doi || '',
           year: spieData.year,
           editors: 'SPIE',
           series: 'SPIE Conference Proceedings',
@@ -1551,6 +1634,10 @@ class TabAutomator {
           throw new Error('Gagal mengekstrak metadata dari IGI Global.');
         }
 
+        const igiIsbnClean = (igiData.isbn && typeof isValidIsbn === 'function' && isValidIsbn(igiData.isbn))
+          ? (typeof sanitizeIsbn === 'function' ? sanitizeIsbn(igiData.isbn) : igiData.isbn)
+          : '';
+
         return {
           publisherType: 'IGI Global',
           title: igiData.title,
@@ -1558,8 +1645,11 @@ class TabAutomator {
           subtitle: '',
           coverUrl: igiData.coverUrl,
           coverFilename: '',
-          isbn: igiData.isbn,
-          doi: '',
+          isbnElectronic: scopusMeta.isbnElectronic || igiIsbnClean || '',
+          isbnPrint: scopusMeta.isbnPrint || '',
+          city: scopusMeta.city || '',
+          isbn: (igiIsbnClean ? (igiIsbnClean.startsWith('ISBN') ? igiIsbnClean : `ISBN-${igiIsbnClean}`) : '') || scopusMeta.isbnElectronic || scopusMeta.isbnPrint || '',
+          doi: scopusMeta.doi || '',
           year: igiData.year,
           editors: 'IGI Global',
           series: 'IGI Global Publishing',
@@ -1640,8 +1730,11 @@ class TabAutomator {
           subtitle: '',
           coverUrl: ojsData.coverUrl,
           coverFilename: '',
-          isbn: '',
-          doi: '',
+          isbnElectronic: scopusMeta.isbnElectronic || '',
+          isbnPrint: scopusMeta.isbnPrint || '',
+          city: scopusMeta.city || '',
+          isbn: scopusMeta.isbnElectronic || scopusMeta.isbnPrint || '',
+          doi: scopusMeta.doi || '',
           year: ojsData.year,
           editors: 'Academic Conferences',
           series: 'Academic Conferences Publishing',
@@ -1718,6 +1811,7 @@ class TabAutomator {
 
         const fullTitle = iopData.seriesTitle ? `${iopData.seriesTitle}${iopData.volName ? ' (' + iopData.volName + ')' : ''}` : 'IOP Conference Series';
 
+        // PENTING: Jangan masukkan ISSN sebagai ISBN (permintaan user: tolak ISSN)
         return {
           publisherType: 'IOP',
           title: fullTitle,
@@ -1725,8 +1819,11 @@ class TabAutomator {
           subtitle: iopData.volName || '',
           coverUrl: iopData.coverUrl,
           coverFilename: '',
-          isbn: iopData.issn ? `ISSN-${iopData.issn}` : '',
-          doi: '',
+          isbnElectronic: scopusMeta.isbnElectronic || '',
+          isbnPrint: scopusMeta.isbnPrint || '',
+          city: scopusMeta.city || '',
+          isbn: scopusMeta.isbnElectronic || scopusMeta.isbnPrint || '',
+          doi: scopusMeta.doi || '',
           year: iopData.year,
           editors: 'IOP Publishing',
           series: iopData.seriesTitle || 'IOP Publishing',
@@ -1787,12 +1884,24 @@ class TabAutomator {
             title: title || 'Publisher Document',
             coverUrl: coverUrl,
             year: year,
-            isbn: isbn ? `ISBN-${isbn}` : ''
+            isbn: isbn ? `ISBN-${isbn}` : '',
+            html: document.documentElement ? document.documentElement.outerHTML : ''
           };
         });
 
         if (genericData && genericData.coverUrl) {
           onStatus(`Ditemukan Cover Publisher: ${genericData.title}. Menyiapkan unduhan...`);
+          let genParsedMeta = {};
+          if (genericData.html && typeof extractGenericPublicationMetadata === 'function') {
+            try {
+              genParsedMeta = extractGenericPublicationMetadata(genericData.html, { sourceUrl: currentUrl });
+            } catch (e) {}
+          }
+          const finalIsbnElec = genParsedMeta.isbnElectronic || scopusMeta.isbnElectronic || '';
+          const finalIsbnPrint = genParsedMeta.isbnPrint || scopusMeta.isbnPrint || '';
+          const finalCity = genParsedMeta.city || scopusMeta.city || '';
+          const finalIsbn = finalIsbnElec || finalIsbnPrint || (genericData.isbn && typeof isValidIsbn === 'function' && isValidIsbn(genericData.isbn) ? genericData.isbn : '');
+
           return {
             publisherType: 'General',
             title: genericData.title,
@@ -1800,12 +1909,15 @@ class TabAutomator {
             subtitle: '',
             coverUrl: genericData.coverUrl,
             coverFilename: '',
-            isbn: genericData.isbn,
-            doi: '',
+            isbnElectronic: finalIsbnElec,
+            isbnPrint: finalIsbnPrint,
+            city: finalCity,
+            isbn: finalIsbn,
+            doi: genParsedMeta.doi || scopusMeta.doi || '',
             year: genericData.year,
             editors: '',
             series: 'General Publication',
-            publisher: 'General Publisher',
+            publisher: genParsedMeta.publisher || 'General Publisher',
             scopusUrl: scopusUrl,
             bookUrl: currentUrl,
             sourceUrl: currentUrl,
@@ -1920,6 +2032,18 @@ class TabAutomator {
       bookData.chapterTitle = paperOrChapterTitle;
       bookData.bookUrl = bookHtmlData.url;
       bookData.isPdfCover = false;
+      bookData.isbnElectronic = bookData.isbnElectronic || scopusMeta.isbnElectronic || '';
+      bookData.isbnPrint = bookData.isbnPrint || scopusMeta.isbnPrint || '';
+      bookData.city = bookData.city || scopusMeta.city || '';
+      if (!bookData.isbn) {
+        bookData.isbn = bookData.isbnElectronic || bookData.isbnPrint || '';
+      }
+      if (!bookData.doi && scopusMeta.doi) {
+        bookData.doi = scopusMeta.doi;
+      }
+      if ((!bookData.publisher || bookData.publisher === 'Springer') && scopusMeta.publisher) {
+        bookData.publisher = scopusMeta.publisher;
+      }
 
       return bookData;
 

@@ -283,9 +283,16 @@ document.addEventListener('DOMContentLoaded', () => {
       </td>
       <td>
         <div style="font-size:11px;">
-          <div><b>Penerbit:</b> <span style="color:#025e8d;font-weight:600;">${book.publisher || 'Unknown'}</span></div>
-          <div><b>ISBN/ID:</b> ${book.isbn || '-'}</div>
-          ${book.doi ? `<div><b>DOI:</b> ${book.doi}</div>` : ''}
+          <div><b>Penerbit:</b> <span style="color:#025e8d;font-weight:600;">${escapeHtml(book.publisher || 'Unknown')}</span></div>
+          ${book.city ? `<div style="margin-top:2px;"><b>Lokasi:</b> <span style="color:#15803d;font-weight:600;">📍 ${escapeHtml(book.city)}</span></div>` : ''}
+          ${book.doi ? `<div style="margin-top:2px;color:var(--text-muted);"><b>DOI:</b> ${escapeHtml(book.doi)}</div>` : ''}
+        </div>
+      </td>
+      <td>
+        <div style="font-size:11px;">
+          <div><b>Elec:</b> <span style="font-family:monospace;color:#025e8d;font-weight:600;">${escapeHtml(book.isbnElectronic || '-')}</span></div>
+          <div><b>Print:</b> <span style="font-family:monospace;color:#334155;">${escapeHtml(book.isbnPrint || '-')}</span></div>
+          ${(!book.isbnElectronic && !book.isbnPrint && book.isbn) ? `<div style="color:var(--text-muted);"><b>ID:</b> ${escapeHtml(book.isbn)}</div>` : ''}
         </div>
       </td>
       <td>

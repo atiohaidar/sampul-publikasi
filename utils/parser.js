@@ -84,35 +84,51 @@ function parseSpringerBookHtml(htmlString, sourceUrl = '') {
     coverUrl = coverUrl.replace(/\?as=webp.*/, '');
   }
 
-  // 5. Extract ISBN
+  // 5. Extract ISBN (Electronic & Print)
   let isbn = '';
+  let isbnElectronic = '';
+  let isbnPrint = '';
+
   if (jsonLd && jsonLd.isbn) {
     isbn = jsonLd.isbn;
+    if (typeof isValidIsbn === 'function' && isValidIsbn(isbn)) {
+      isbnElectronic = sanitizeIsbn ? sanitizeIsbn(isbn) : isbn;
+    }
   }
-  if (!isbn) {
-    // Check bibliographic section
-    const biblioItems = doc.querySelectorAll('.c-bibliographic-information__list-item, [data-test="bibliographic-information"] li');
-    for (const item of biblioItems) {
-      const text = item.textContent || '';
-      if (/eBook ISBN|Hardcover ISBN|Softcover ISBN/i.test(text)) {
-        const match = text.match(/([0-9]{3}-[0-9]-[0-9]{3}-[0-9]{5}-[0-9]|[0-9]{13}|[0-9]{10})/);
-        if (match) {
-          isbn = match[1];
-          break;
-        }
+
+  // Check bibliographic section
+  const biblioItems = doc.querySelectorAll('.c-bibliographic-information__list-item, [data-test="bibliographic-information"] li');
+  for (const item of biblioItems) {
+    const text = item.textContent || '';
+    if (/eBook\s*ISBN/i.test(text)) {
+      const match = text.match(/([0-9]{3}-[0-9]-[0-9]{3}-[0-9]{5}-[0-9]|[0-9]{13}|[0-9]{10})/);
+      if (match) {
+        isbnElectronic = typeof sanitizeIsbn === 'function' ? sanitizeIsbn(match[1]) : match[1];
+        if (!isbn) isbn = match[1];
+      }
+    } else if (/(?:Hardcover|Softcover|Print|Paperback)\s*ISBN/i.test(text)) {
+      const match = text.match(/([0-9]{3}-[0-9]-[0-9]{3}-[0-9]{5}-[0-9]|[0-9]{13}|[0-9]{10})/);
+      if (match) {
+        isbnPrint = typeof sanitizeIsbn === 'function' ? sanitizeIsbn(match[1]) : match[1];
+        if (!isbn) isbn = match[1];
       }
     }
   }
+
   if (!isbn) {
     const isxnInput = doc.querySelector('input[name="isxn"]');
     if (isxnInput) {
       isbn = isxnInput.value;
+      if (!isbnElectronic && typeof isValidIsbn === 'function' && isValidIsbn(isbn)) {
+        isbnElectronic = sanitizeIsbn ? sanitizeIsbn(isbn) : isbn;
+      }
     }
   }
   if (!isbn && coverUrl) {
     const match = coverUrl.match(/([0-9]{3}-[0-9]-[0-9]{3}-[0-9]{5}-[0-9]|[0-9]{13})/);
     if (match) {
       isbn = match[1];
+      if (!isbnElectronic) isbnElectronic = match[1];
     }
   }
 
@@ -180,11 +196,27 @@ function parseSpringerBookHtml(htmlString, sourceUrl = '') {
     }
   }
 
+  // 11. Extract Conference Location / City
+  let city = '';
+  const locEl = doc.querySelector('[data-test*="conference-location"], [data-test*="location"], .c-bibliographic-information [data-test*="location"]');
+  if (locEl) {
+    city = typeof cleanCityOrLocation === 'function' ? cleanCityOrLocation(locEl.textContent) : locEl.textContent.trim();
+  }
+  if (!city && pubEl) {
+    const locMatch = pubEl.textContent.match(/(?:Conference\s*Location|Location|Held\s*in)[\s:]*([^\n\r<]+)/i);
+    if (locMatch) {
+      city = typeof cleanCityOrLocation === 'function' ? cleanCityOrLocation(locMatch[1]) : locMatch[1].trim();
+    }
+  }
+
   return {
     title: title || 'Tanpa Judul',
     subtitle: subtitle || '',
     coverUrl: coverUrl || '',
     isbn: isbn || '',
+    isbnElectronic: isbnElectronic || '',
+    isbnPrint: isbnPrint || '',
+    city: city || '',
     doi: doi || '',
     year: year || '',
     editors: editors || '',
@@ -259,14 +291,37 @@ function parseGenericPublisherHtml(docOrHtml, sourceUrl = '') {
     }
   }
 
-  // 3. ISBN / DOI
+  // 3. ISBN / DOI (Strictly ISBN, NO ISSN; Separated into Electronic & Print)
   let isbn = '';
-  const isbnMeta = doc.querySelector('meta[name="citation_isbn"]');
-  if (isbnMeta) isbn = isbnMeta.getAttribute('content') || '';
+  let isbnElectronic = '';
+  let isbnPrint = '';
+  let city = '';
+
+  if (typeof extractGenericPublicationMetadata === 'function') {
+    const genMeta = extractGenericPublicationMetadata(doc, { doi: '', sourceUrl });
+    isbnElectronic = genMeta.isbnElectronic || '';
+    isbnPrint = genMeta.isbnPrint || '';
+    city = genMeta.city || '';
+    if (isbnElectronic || isbnPrint) {
+      isbn = isbnElectronic || isbnPrint;
+    }
+  }
+
+  if (!isbn) {
+    const isbnMeta = doc.querySelector('meta[name="citation_isbn"]');
+    if (isbnMeta && typeof isValidIsbn === 'function' && isValidIsbn(isbnMeta.getAttribute('content'))) {
+      isbn = typeof sanitizeIsbn === 'function' ? sanitizeIsbn(isbnMeta.getAttribute('content')) : isbnMeta.getAttribute('content');
+      if (!isbnElectronic) isbnElectronic = isbn;
+    }
+  }
+
   if (!isbn) {
     const text = doc.body ? doc.body.textContent : '';
     const match = text.match(/ISBN(?:-13)?:?\s*(\d{13}|\d{10}|\d{3}-\d-\d{3}-\d{5}-\d)/i);
-    if (match) isbn = match[1];
+    if (match && (typeof isValidIsbn !== 'function' || isValidIsbn(match[1]))) {
+      isbn = typeof sanitizeIsbn === 'function' ? sanitizeIsbn(match[1]) : match[1];
+      if (!isbnElectronic) isbnElectronic = isbn;
+    }
   }
 
   let doi = '';
@@ -303,11 +358,22 @@ function parseGenericPublisherHtml(docOrHtml, sourceUrl = '') {
     } catch (e) {}
   }
 
+  // 6. City / Conference Location fallback if not extracted
+  if (!city) {
+    const locEl = doc.querySelector('[data-test*="location"], [class*="conferenceLoc"], [class*="location"]');
+    if (locEl) {
+      city = typeof cleanCityOrLocation === 'function' ? cleanCityOrLocation(locEl.textContent) : locEl.textContent.trim();
+    }
+  }
+
   return {
     success: !!(coverUrl || title),
     title: title || 'Publisher Document',
     coverUrl: coverUrl || '',
-    isbn: isbn ? `ISBN-${isbn}` : '',
+    isbn: isbn ? (isbn.startsWith('ISBN') ? isbn : `ISBN-${isbn}`) : '',
+    isbnElectronic: isbnElectronic || '',
+    isbnPrint: isbnPrint || '',
+    city: city || '',
     doi: doi,
     year: year,
     publisher: publisher || 'General Publisher',

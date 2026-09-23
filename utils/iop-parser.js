@@ -68,13 +68,33 @@ function parseIopPage(docOrHtml, sourceUrl = '') {
     coverUrl = 'https://iopscience.iop.org' + (coverUrl.startsWith('/') ? '' : '/') + coverUrl;
   }
 
-  // 4. ISSN & DOI
+  // 4. ISSN, Real ISBN & DOI
   let issn = '';
+  let isbnElectronic = '';
+  let isbnPrint = '';
+  let city = '';
   let doi = '';
   const bodyText = doc.body ? doc.body.textContent : '';
 
   const issnMatch = bodyText.match(/ISSN:?\s*([\d-]+)/i);
   if (issnMatch) issn = issnMatch[1];
+
+  // Ekstrak ISBN asli jika tersedia (hanya jika lolos isValidIsbn)
+  if (typeof extractGenericPublicationMetadata === 'function') {
+    const meta = extractGenericPublicationMetadata(doc, { doi, sourceUrl });
+    isbnElectronic = meta.isbnElectronic || '';
+    isbnPrint = meta.isbnPrint || '';
+    city = meta.city || '';
+  }
+
+  // Ekstrak Lokasi Konferensi / City dari IOP jika belum terambil
+  if (!city) {
+    const confLocMatch = bodyText.match(/(?:Conference\s*Location|Held\s*in)[\s:]*([^\n\r<]+)/i) ||
+                         bodyText.match(/\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}\s*[-–—]\s*\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}\s*,?\s*([A-Za-z\s,.-]+)/);
+    if (confLocMatch && confLocMatch[1]) {
+      city = typeof cleanCityOrLocation === 'function' ? cleanCityOrLocation(confLocMatch[1]) : confLocMatch[1].trim();
+    }
+  }
 
   const doiMatch = bodyText.match(/10\.1088\/[-._;()/:A-Za-z0-9]+/);
   if (doiMatch) doi = doiMatch[0];
@@ -90,6 +110,9 @@ function parseIopPage(docOrHtml, sourceUrl = '') {
     year = yearMatch[1] || yearMatch[2] || yearMatch[3];
   }
 
+  // ISBN hanya diisi jika BENAR-BENAR ada ISBN, BUKAN ISSN
+  const realIsbn = isbnElectronic || isbnPrint || '';
+
   return {
     success: !!(coverUrl || seriesTitle),
     title: fullTitle || seriesTitle || paperTitle || 'IOP Conference Proceeding',
@@ -99,7 +122,11 @@ function parseIopPage(docOrHtml, sourceUrl = '') {
     issueName: issueName,
     seriesUrl: seriesUrl || sourceUrl,
     coverUrl: coverUrl,
-    isbn: issn ? `ISSN-${issn}` : (doi ? `IOP-${doi}` : ''),
+    isbn: realIsbn,
+    isbnElectronic: isbnElectronic,
+    isbnPrint: isbnPrint,
+    issn: issn,
+    city: city,
     doi: doi,
     year: year,
     publisher: 'IOP Publishing',
