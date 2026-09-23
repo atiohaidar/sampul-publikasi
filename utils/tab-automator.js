@@ -282,132 +282,164 @@ class TabAutomator {
 
         const scopusResult = await this.executeInTab(tabId, (isMetaOnly) => {
           return new Promise((resolve) => {
-            const MAX_WAIT = isMetaOnly ? 8000 : 12000;
-            const INTERVAL = 350;
+            const MAX_WAIT = isMetaOnly ? 9000 : 12000;
+            const INTERVAL = 300;
             let elapsed = 0;
 
             const poll = () => {
-              // 1. Klik tombol "Show all information", "Detailed information", "Show more" jika ada untuk membuka sidebar/flyout Scopus
-              const infoButtons = Array.from(document.querySelectorAll('button, a')).filter(btn => {
-                const text = (btn.innerText || btn.textContent || '').trim().toLowerCase();
-                const matchesText = text.includes('show all information') ||
-                                    text.includes('detailed information') ||
-                                    text.includes('detail information') ||
-                                    text.includes('show more information') ||
-                                    text.includes('show information') ||
-                                    text.includes('show more');
-                return matchesText && btn.getAttribute('aria-expanded') !== 'true';
-              });
+              // 1. Klik tombol "Show all information" / "Detailed information" jika sidebar belum terbuka
+              const isFlyoutOpen = !!document.querySelector('.Flyout_main__klFeU, [class*="DetailedInformationFlyout"], [data-testid="flyout-main"]');
+              if (!isFlyoutOpen) {
+                const infoButtons = Array.from(document.querySelectorAll('button, a')).filter(btn => {
+                  const text = (btn.innerText || btn.textContent || '').trim().toLowerCase();
+                  return text.includes('show all information') ||
+                         text.includes('detailed information') ||
+                         text.includes('detail information') ||
+                         text.includes('show more information') ||
+                         text.includes('show information');
+                });
 
-              infoButtons.forEach(btn => {
-                try {
-                  btn.click();
-                  btn.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
-                } catch (e) {}
-              });
-
-              // Cek apakah flyout / sidebar Scopus sudah terbuka dan memiliki data ISBN atau metadata
-              const outer = document.documentElement ? document.documentElement.outerHTML : '';
-              const hasIsbnInScopus = /97[89][- ]?[0-9]{1,5}[- ]?[0-9]+[- ]?[0-9]+[- ]?[0-9Xx]/.test(outer) ||
-                                      outer.includes('source-info-isbn') ||
-                                      outer.includes('document-info-isbn') ||
-                                      outer.includes('DetailedInformationFlyout') ||
-                                      outer.includes('Flyout_main');
-
-              // Cek apakah Scopus memiliki 2 ISBN atau ISBN + Lokasi (Data Lengkap)
-              const isbnMatches = outer.match(/97[89][- ]?[0-9]{1,5}[- ]?[0-9]+[- ]?[0-9]+[- ]?[0-9Xx]/g) || [];
-              const uniqueIsbns = Array.from(new Set(isbnMatches.map(m => m.replace(/[^0-9Xx]/g, ''))));
-              const hasLocationInScopus = /conference-location|Conference\s*Location|DetailedInformationFlyout_metadata/i.test(outer);
-              const isScopusMetaComplete = (uniqueIsbns.length >= 2) || (uniqueIsbns.length >= 1 && hasLocationInScopus);
-
-              // Jika mode metadata only (Cepat):
-              // Hanya langsung selesai di Scopus jika data sudah LENGKAP (kedua ISBN ada atau ISBN + Lokasi ada)
-              if (isMetaOnly) {
-                if (isScopusMetaComplete && elapsed >= 600) {
-                  const titleEl = document.querySelector('h1, h2, .document-title');
-                  resolve({
-                    success: true,
-                    fastMetaFound: true,
-                    paperTitle: titleEl ? titleEl.textContent.trim() : '',
-                    html: outer
-                  });
-                  return;
+                for (const btn of infoButtons) {
+                  if (!btn._scopusClicked) {
+                    btn._scopusClicked = true;
+                    try { btn.click(); } catch (e) {}
+                    break;
+                  }
                 }
+              }
+
+              // Periksa kelengkapan metadata Scopus langsung dari elemen DOM
+              let isbnsFoundCount = 0;
+              let isCityFound = false;
+
+              const isbnEl = document.querySelector('[data-testid="source-info-isbn"], [data-testid="document-info-isbn"]');
+              if (isbnEl && isbnEl.textContent) {
+                const cleanIsbnStr = isbnEl.textContent.trim();
+                const matches = cleanIsbnStr.match(/(?:97[89][- ]?)?[0-9]{1,5}[- ]?[0-9]+[- ]?[0-9]+[- ]?[0-9Xx]/g) || [];
+                const validMatches = matches.filter(m => {
+                  const d = m.replace(/[^0-9Xx]/g, '');
+                  return d.length === 10 || d.length === 13;
+                });
+                isbnsFoundCount = validMatches.length;
+              }
+              if (!isbnsFoundCount) {
+                const dts = Array.from(document.querySelectorAll('dl dt'));
+                const isbnDt = dts.find(dt => dt.textContent.trim().toLowerCase() === 'isbn');
+                if (isbnDt) {
+                  const dd = isbnDt.nextElementSibling || isbnDt.parentElement.querySelector('dd');
+                  if (dd && dd.textContent) {
+                    const matches = dd.textContent.match(/(?:97[89][- ]?)?[0-9]{1,5}[- ]?[0-9]+[- ]?[0-9]+[- ]?[0-9Xx]/g) || [];
+                    const validMatches = matches.filter(m => {
+                      const d = m.replace(/[^0-9Xx]/g, '');
+                      return d.length === 10 || d.length === 13;
+                    });
+                    isbnsFoundCount = validMatches.length;
+                  }
+                }
+              }
+
+              const locEl = document.querySelector('[data-testid*="conference-location"], [data-testid*="location"]');
+              if (locEl && locEl.textContent && locEl.textContent.trim().length > 3) {
+                isCityFound = true;
+              }
+              if (!isCityFound) {
+                const dts = Array.from(document.querySelectorAll('dl dt'));
+                const locDt = dts.find(dt => {
+                  const txt = dt.textContent.trim().toLowerCase();
+                  return txt.includes('location') || txt.includes('city') || txt.includes('venue');
+                });
+                if (locDt) {
+                  const dd = locDt.nextElementSibling || locDt.parentElement.querySelector('dd');
+                  if (dd && dd.textContent && dd.textContent.trim().length > 3) {
+                    isCityFound = true;
+                  }
+                }
+              }
+
+              // Metadata Scopus LENGKAP jika ada 2 ISBN (Elec & Print) ATAU ada ISBN + Lokasi Kota
+              const isScopusMetaComplete = (isbnsFoundCount >= 2) || (isbnsFoundCount >= 1 && isCityFound);
+
+              // Jika mode metadata only (Cepat) dan data Scopus LENGKAP:
+              if (isMetaOnly && isScopusMetaComplete && elapsed >= 800) {
+                const titleEl = document.querySelector('h1, h2, .document-title');
+                resolve({
+                  success: true,
+                  fastMetaFound: true,
+                  paperTitle: titleEl ? titleEl.textContent.trim() : '',
+                  html: document.documentElement ? document.documentElement.outerHTML : ''
+                });
+                return;
               }
 
               // 2. Buka dropdown menu "Full text" jika ada dan belum terbuka
               const toolbar = document.querySelector('[class*="DocumentToolbar"], .DocumentToolbar_wrapper__Cfual, .document-toolbar');
               const searchScope = toolbar || document;
 
-              const allButtons = Array.from(searchScope.querySelectorAll('button'));
-              const fullTextBtn = allButtons.find(btn => {
+              const fullTextBtn = Array.from(searchScope.querySelectorAll('button')).find(btn => {
                 const text = (btn.innerText || btn.textContent || '').trim().toLowerCase();
                 return text.includes('full text') && !text.includes('view pdf');
               });
 
-              if (fullTextBtn && fullTextBtn.getAttribute('aria-expanded') !== 'true') {
-                fullTextBtn.click();
+              const isMenuOpen = !!document.querySelector('[class*="Menu_menu"], [role="menu"], [class*="Stack_stack"] a');
+              if (fullTextBtn && !isMenuOpen && !fullTextBtn._clicked) {
+                fullTextBtn._clicked = true;
+                try { fullTextBtn.click(); } catch (e) {}
               }
 
               // 3. Cari link "View at Publisher"
-              const allLinks = Array.from(document.querySelectorAll(
-                '[class*="DocumentToolbar"] a, [class*="Menu_menu"] a, [role="menu"] a, [class*="Stack_stack"] a, a'
+              const allElements = Array.from(document.querySelectorAll(
+                '[class*="DocumentToolbar"] a, [class*="DocumentToolbar"] button, [class*="Menu_menu"] a, [role="menu"] a, [role="menuitem"], [class*="Stack_stack"] a, a'
               ));
 
-              const pubLink = allLinks.find(a => {
-                const text = (a.innerText || a.textContent || '').trim().toLowerCase();
+              const pubEl = allElements.find(el => {
+                const text = (el.innerText || el.textContent || '').trim().toLowerCase();
                 const isViewPdf = text.includes('view pdf');
                 const isViewPub = text.includes('view at publisher') || (text.includes('view') && text.includes('publisher'));
                 return isViewPub && !isViewPdf;
               });
 
-              if (pubLink && pubLink.href && !pubLink.href.startsWith('javascript:')) {
-                // Di mode cepat, jika tombol detail baru diklik, tunggu sedikit agar sidebar Scopus sempat render
-                if (isMetaOnly && elapsed < 1200 && !hasIsbnInScopus) {
-                  // Lanjut polling berikutnya
-                } else {
-                  const titleEl = document.querySelector('h1, h2, .document-title');
-                  resolve({
-                    success: true,
-                    publisherUrl: pubLink.href,
-                    paperTitle: titleEl ? titleEl.textContent.trim() : '',
-                    html: document.documentElement ? document.documentElement.outerHTML : ''
-                  });
-                  return;
+              let publisherUrl = '';
+              if (pubEl) {
+                if (pubEl.href && !pubEl.href.startsWith('javascript:')) {
+                  publisherUrl = pubEl.href;
+                } else if (pubEl.getAttribute('href') && !pubEl.getAttribute('href').startsWith('javascript:')) {
+                  publisherUrl = pubEl.getAttribute('href');
                 }
               }
 
-              // 4. Cek link DOI atau publisher langsung di dalam toolbar/menu
-              const toolbarDoiLink = Array.from(searchScope.querySelectorAll('a')).find(a => {
-                if (!a.href) return false;
-                const text = (a.innerText || a.textContent || '').toLowerCase();
-                if (text.includes('view pdf')) return false;
-                return a.href.includes('doi.org/10.') ||
-                       a.href.includes('springer.com') ||
-                       a.href.includes('ieeexplore.ieee.org') ||
-                       a.href.includes('sciencedirect.com') ||
-                       a.href.includes('dl.acm.org') ||
-                       a.href.includes('spiedigitallibrary.org') ||
-                       a.href.includes('spie.org') ||
-                       a.href.includes('igi-global.com') ||
-                       a.href.includes('academic-conferences.org') ||
-                       a.href.includes('iopscience.iop.org') ||
-                       a.href.includes('acm.org');
-              });
-
-              if (toolbarDoiLink) {
-                if (isMetaOnly && elapsed < 1200 && !hasIsbnInScopus) {
-                  // Tunggu sebentar untuk Scopus sidebar
-                } else {
-                  const titleEl = document.querySelector('h1, h2, .document-title');
-                  resolve({
-                    success: true,
-                    publisherUrl: toolbarDoiLink.href,
-                    paperTitle: titleEl ? titleEl.textContent.trim() : '',
-                    html: document.documentElement ? document.documentElement.outerHTML : ''
-                  });
-                  return;
+              // 4. Cek link DOI atau link penerbit langsung di dokumen
+              if (!publisherUrl) {
+                const directPubLink = Array.from(document.querySelectorAll('a')).find(a => {
+                  if (!a.href) return false;
+                  const h = a.href.toLowerCase();
+                  const text = (a.innerText || a.textContent || '').toLowerCase();
+                  if (text.includes('view pdf') || h.includes('.pdf')) return false;
+                  return h.includes('doi.org/10.') ||
+                         h.includes('springer.com') ||
+                         h.includes('ieeexplore.ieee.org') ||
+                         h.includes('sciencedirect.com') ||
+                         h.includes('dl.acm.org') ||
+                         h.includes('spiedigitallibrary.org') ||
+                         h.includes('spie.org') ||
+                         h.includes('igi-global.com') ||
+                         h.includes('academic-conferences.org') ||
+                         h.includes('iopscience.iop.org') ||
+                         h.includes('acm.org');
+                });
+                if (directPubLink) {
+                  publisherUrl = directPubLink.href;
                 }
+              }
+
+              if (publisherUrl) {
+                const titleEl = document.querySelector('h1, h2, .document-title');
+                resolve({
+                  success: true,
+                  publisherUrl: publisherUrl,
+                  paperTitle: titleEl ? titleEl.textContent.trim() : '',
+                  html: document.documentElement ? document.documentElement.outerHTML : ''
+                });
+                return;
               }
 
               elapsed += INTERVAL;
@@ -425,9 +457,9 @@ class TabAutomator {
                 }
 
                 resolve({
-                  success: hasIsbnInScopus,
-                  fastMetaFound: hasIsbnInScopus,
-                  error: hasIsbnInScopus ? null : 'Tidak dapat menemukan link View at Publisher atau data ISBN di Scopus ini.',
+                  success: isbnsFoundCount > 0,
+                  fastMetaFound: isbnsFoundCount > 0,
+                  error: isbnsFoundCount > 0 ? null : 'Tidak dapat menemukan link View at Publisher atau data ISBN di Scopus ini.',
                   html: document.documentElement ? document.documentElement.outerHTML : ''
                 });
                 return;
@@ -457,11 +489,11 @@ class TabAutomator {
         // Jika Scopus sudah menyediakan data LENGKAP (kedua ISBN Elec & Print ada, ATAU ISBN & City ada),
         // ATAU jika memang TIDAK ADA link publisher untuk dituju:
         const hasCompleteScopusMeta = (scopusMeta.isbnElectronic && scopusMeta.isbnPrint) || (scopusMeta.isbnElectronic && scopusMeta.city);
-        const hasPublisherLink = scopusResult && scopusResult.publisherUrl;
+        const hasPublisherLink = Boolean(scopusResult && scopusResult.publisherUrl);
 
         if (metadataOnly) {
-          if ((hasCompleteScopusMeta || !hasPublisherLink) && (scopusMeta.isbnElectronic || scopusMeta.isbnPrint)) {
-            onStatus(`Scopus: Selesai mengambil metadata lengkap dari Scopus (ISBN Elec: ${scopusMeta.isbnElectronic || '-'}, Print: ${scopusMeta.isbnPrint || '-'}, Lokasi: ${scopusMeta.city || '-'}).`);
+          if (hasCompleteScopusMeta || !hasPublisherLink) {
+            onStatus(`Scopus: Selesai mengambil metadata lengkap dari Scopus (ISBN: ${scopusMeta.isbnElectronic || scopusMeta.isbnPrint || '-'}, Lokasi: ${scopusMeta.city || '-'}).`);
             return {
               publisherType: 'Scopus',
               title: (scopusResult && scopusResult.paperTitle) || scopusMeta.sourceTitle || paperOrChapterTitle || '',
@@ -479,8 +511,8 @@ class TabAutomator {
               coverPdfUrl: '',
               coverFilename: 'Tanpa Cover (Mode Cepat)'
             };
-          } else if (hasPublisherLink) {
-            onStatus(`Scopus: Data belum lengkap (hanya 1 ISBN / lokasi belum ada). Membuka link penerbit untuk melengkapi data...`);
+          } else {
+            onStatus(`Scopus: Data belum lengkap (hanya 1 ISBN / lokasi belum ada). Mengarahkan ke penerbit untuk melengkapi data...`);
           }
         }
 
