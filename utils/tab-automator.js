@@ -2128,12 +2128,12 @@ class TabAutomator {
           };
         });
 
-        if (genericData && genericData.coverUrl) {
-          onStatus(`Ditemukan Cover Publisher: ${genericData.title}. Menyiapkan unduhan...`);
+        if (genericData && (genericData.coverUrl || metadataOnly || genericData.title)) {
+          onStatus(`Mengekstrak metadata Publisher: ${genericData.title}...`);
           let genParsedMeta = {};
           if (genericData.html && typeof extractGenericPublicationMetadata === 'function') {
             try {
-              genParsedMeta = extractGenericPublicationMetadata(genericData.html, { sourceUrl: currentUrl });
+              genParsedMeta = extractGenericPublicationMetadata(genericData.html, { sourceUrl: currentUrl, doi: scopusMeta.doi });
             } catch (e) {}
           }
           const finalIsbnElec = genParsedMeta.isbnElectronic || scopusMeta.isbnElectronic || '';
@@ -2142,21 +2142,21 @@ class TabAutomator {
           const finalIsbn = finalIsbnElec || finalIsbnPrint || (genericData.isbn && typeof isValidIsbn === 'function' && isValidIsbn(genericData.isbn) ? genericData.isbn : '');
 
           return {
-            publisherType: 'General',
-            title: genericData.title,
+            publisherType: genParsedMeta.publisher || scopusMeta.publisher || 'General',
+            title: genericData.title || scopusMeta.sourceTitle || paperOrChapterTitle,
             chapterTitle: paperOrChapterTitle,
             subtitle: '',
-            coverUrl: metadataOnly ? '' : genericData.coverUrl,
+            coverUrl: metadataOnly ? '' : (genericData.coverUrl || ''),
             coverFilename: metadataOnly ? 'Tanpa Cover (Mode Cepat)' : '',
             isbnElectronic: finalIsbnElec,
             isbnPrint: finalIsbnPrint,
             city: finalCity,
             isbn: finalIsbn,
             doi: genParsedMeta.doi || scopusMeta.doi || '',
-            year: genericData.year,
+            year: genericData.year || scopusMeta.year || '',
             editors: '',
             series: 'General Publication',
-            publisher: genParsedMeta.publisher || 'General Publisher',
+            publisher: genParsedMeta.publisher || scopusMeta.publisher || 'General Publisher',
             scopusUrl: scopusUrl,
             bookUrl: currentUrl,
             sourceUrl: currentUrl,
